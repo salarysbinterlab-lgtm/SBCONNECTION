@@ -10,6 +10,7 @@ pnpm-debug.log*
 vite-dev.log
 vite-dev.err.log
 vite.config.ts.timestamp-*.mjs
+.wrangler/
 *.local
 .DS_Store
 Thumbs.db
