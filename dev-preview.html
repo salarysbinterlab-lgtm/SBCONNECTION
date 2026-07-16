@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <title>SB Connect Dev Preview</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, rgba(16,185,129,.18), transparent 32%),
+        linear-gradient(135deg, #07111f, #111827);
+      color: white;
+      font-family: Inter, system-ui, sans-serif;
+      overflow: hidden;
+    }
+    .bar {
+      position: fixed;
+      inset: 12px 12px auto 12px;
+      z-index: 10;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      border-radius: 999px;
+      background: rgba(15,23,42,.82);
+      border: 1px solid rgba(255,255,255,.18);
+      backdrop-filter: blur(16px);
+      overflow-x: auto;
+    }
+    .bar button, .bar a {
+      height: 34px;
+      border: 0;
+      border-radius: 999px;
+      padding: 0 12px;
+      background: rgba(255,255,255,.12);
+      color: white;
+      font-size: 12px;
+      font-weight: 900;
+      text-decoration: none;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .bar button.active { background: white; color: black; }
+    .stage {
+      width: 100vw;
+      height: 100vh;
+      display: grid;
+      place-items: center;
+      padding-top: 58px;
+    }
+    iframe {
+      border: 0;
+      background: white;
+      box-shadow: 0 30px 100px rgba(0,0,0,.55);
+      transition: width 220ms ease, height 220ms ease;
+    }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <button data-mode="desktop">Desktop</button>
+    <button data-mode="ipad">iPad</button>
+    <button data-mode="tablet">Tablet</button>
+    <button data-mode="mobile">Mobile</button>
+    <a id="openDirect" href="#">Open direct</a>
+  </div>
+  <div class="stage">
+    <iframe id="sb-preview-frame"></iframe>
+  </div>
+
+  <script>
+    const modes = {
+      desktop: { width: 1440, height: 900 },
+      ipad: { width: 1024, height: 1366 },
+      tablet: { width: 768, height: 1024 },
+      mobile: { width: 390, height: 844 }
+    };
+
+    const params = new URLSearchParams(location.search);
+    const url = params.get('url') || '/';
+    let mode = params.get('mode') || 'desktop';
+
+    const frame = document.getElementById('sb-preview-frame');
+    const openDirect = document.getElementById('openDirect');
+
+    function setMode(next) {
+      mode = next;
+      const data = modes[mode] || modes.desktop;
+      const maxW = window.innerWidth - 32;
+      const maxH = window.innerHeight - 90;
+      const scale = Math.min(1, maxW / data.width, maxH / data.height);
+      frame.style.width = data.width + 'px';
+      frame.style.height = data.height + 'px';
+      frame.style.transform = `scale(${scale})`;
+      frame.style.transformOrigin = 'center center';
+      document.querySelectorAll('[data-mode]').forEach(btn => btn.classList.toggle('active', btn.dataset.mode === mode));
+    }
+
+    frame.src = url;
+    openDirect.href = url;
+
+    document.querySelectorAll('[data-mode]').forEach(btn => {
+      btn.addEventListener('click', () => setMode(btn.dataset.mode));
+    });
+
+    window.addEventListener('resize', () => setMode(mode));
+    window.addEventListener('sb-preview-mode', (event) => setMode(event.detail));
+
+    setMode(mode);
+  </script>
+</body>
+</html>

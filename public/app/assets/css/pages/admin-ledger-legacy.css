@@ -1,0 +1,18 @@
+/* Extracted from admin_ledger(3).html - KEEP LEGACY UI */
+:root { --mint-dark: #047857; --mint-main: #10b981; --bg: #f8fafc; }
+    body { font-family: 'Prompt', sans-serif; background: var(--bg); margin: 0; padding: 20px; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .card { background: white; border-radius: 20px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    th { text-align: left; padding: 12px; color: #64748b; font-size: 0.8rem; border-bottom: 2px solid #f1f5f9; text-transform: uppercase; }
+    td { padding: 12px; border-bottom: 1px solid #f1f5f9; font-size: 0.85rem; }
+    .badge { padding: 4px 8px; border-radius: 8px; font-size: 0.7rem; font-weight: 700; }
+    .badge-earn { background: #dcfce7; color: #166534; }
+    .badge-spend { background: #fee2e2; color: #991b1b; }
+    .search-box { display: flex; gap: 10px; margin-bottom: 20px; }
+    input { padding: 10px 15px; border-radius: 10px; border: 1px solid #ddd; outline: none; flex: 1; }
+    .btn-back { padding: 10px 20px; background: white; border: 1px solid #ddd; border-radius: 10px; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+  
+
+/* ADMIN LEDGER COMPACT PATCH */
+body{padding:18px!important}.card{padding:18px!important;border-radius:22px!important}td,th{font-size:.72rem!important;padding:8px!important}.search-box{display:grid!important;grid-template-columns:1fr auto!important;gap:10px!important}.search-box input{height:38px!important}.table-wrap-admin-ledger{max-height:560px;overflow:auto;border-radius:16px;border:1px solid #eef2f7;}

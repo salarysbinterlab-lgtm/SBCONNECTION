@@ -1,0 +1,85 @@
+/* Extracted from admin_questCenter(4).html - KEEP LEGACY UI */
+/* --- เปลี่ยนโทนสีเป็น Mint Theme --- */
+    body { 
+      font-family: 'Prompt', sans-serif; 
+      background: linear-gradient(135deg, #e0f7fa 0%, #b2dfdb 100%); /* พื้นหลังสี Mint */
+      min-height: 100vh;
+      position: relative;
+    }
+    
+    /* Override Bootstrap สี Primary ให้เป็นโทน Mint/Teal */
+    .text-primary { color: #009688 !important; }
+    .bg-primary { background-color: #009688 !important; border-color: #009688 !important; }
+    .btn-primary { background-color: #009688 !important; border-color: #009688 !important; color: #fff !important; }
+    .btn-primary:hover { background-color: #00796b !important; border-color: #00796b !important; }
+    .btn-outline-primary { color: #009688 !important; border-color: #009688 !important; }
+    .btn-outline-primary:hover { background-color: #009688 !important; color: white !important; }
+    .spinner-border.text-primary { border-right-color: transparent !important; border-bottom-color: transparent !important; color: #009688 !important; }
+
+    .card-mission {
+      background: rgba(255, 255, 255, 0.95); /* ให้การ์ดโปร่งแสงนิดๆ รับกับ bg */
+      border-radius: 15px; box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+      margin-bottom: 20px; transition: transform 0.2s, box-shadow 0.2s; overflow: hidden;
+      border: none;
+    }
+    .card-mission:hover { transform: translateY(-5px); box-shadow: 0 12px 30px rgba(0,0,0,0.12); }
+    .mission-img {
+      width: 100%; height: 150px; object-fit: cover; background-color: #eee;
+    }
+    .mission-body { padding: 15px; }
+    .status-badge {
+      position: absolute; top: 10px; right: 10px;
+      padding: 5px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: bold;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+    .bg-active { background-color: #28a745; color: white; }
+    .bg-inactive { background-color: #6c757d; color: white; }
+    
+    /* Loading Spinner */
+    #loadingOverlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(255,255,255,0.9); z-index: 9999;
+      display: flex; justify-content: center; align-items: center; flex-direction: column;
+    }
+    
+    /* Sub-task Builder Styles */
+    .task-item {
+      background: #f8f9fa; border-left: 4px solid #009688;
+      padding: 15px; margin-bottom: 10px; border-radius: 4px; position: relative;
+    }
+    .btn-remove-task {
+      position: absolute; top: 10px; right: 10px; color: #dc3545; cursor: pointer;
+    }
+
+    /* --- ลูกเล่น Bubble Animation 🫧 --- */
+    .bubble-container {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      z-index: -1; 
+      overflow: hidden;
+      pointer-events: none; 
+    }
+    .bubble {
+      position: absolute;
+      bottom: -100px;
+      background: rgba(255, 255, 255, 0.4);
+      border-radius: 50%;
+      animation: flyUp 10s infinite ease-in;
+    }
+    .bubble:nth-child(1) { width: 40px; height: 40px; left: 10%; animation-duration: 8s; }
+    .bubble:nth-child(2) { width: 20px; height: 20px; left: 20%; animation-duration: 5s; animation-delay: 1s; }
+    .bubble:nth-child(3) { width: 50px; height: 50px; left: 35%; animation-duration: 7s; animation-delay: 2s; }
+    .bubble:nth-child(4) { width: 80px; height: 80px; left: 50%; animation-duration: 11s; animation-delay: 0s; }
+    .bubble:nth-child(5) { width: 35px; height: 35px; left: 65%; animation-duration: 6s; animation-delay: 3s; }
+    .bubble:nth-child(6) { width: 60px; height: 60px; left: 80%; animation-duration: 9s; animation-delay: 1s; }
+    .bubble:nth-child(7) { width: 25px; height: 25px; left: 90%; animation-duration: 5s; animation-delay: 2s; }
+
+    @keyframes flyUp {
+      0% { transform: translateY(0) scale(1); opacity: 1; }
+      100% { transform: translateY(-120vh) scale(1.5); opacity: 0; }
+    }
+  
+
+/* ADMIN QUEST GRID PATCH */
+.container{max-width:1180px!important}.py-4{padding-top:18px!important;padding-bottom:18px!important}.mb-4{margin-bottom:14px!important}.row{--bs-gutter-x:12px!important;--bs-gutter-y:12px!important}.card-mission{border-radius:20px!important}.mission-img{height:118px!important}.mission-body{padding:12px!important}.mission-body h5{font-size:.92rem!important}.mission-body p{font-size:.72rem!important;line-height:1.35!important;min-height:34px!important;max-height:40px;overflow:hidden}.status-badge{font-size:.66rem!important;padding:4px 9px!important}.admin-mission-toolbar{display:grid;grid-template-columns:1fr 150px 110px;gap:10px;margin-bottom:12px}.admin-mission-toolbar input,.admin-mission-toolbar select{height:38px;border:1px solid #dbe7e2;border-radius:14px;background:#fff;padding:0 12px;font-weight:700;color:#334155;outline:none;width:100%;}
+@media(max-width:720px){.admin-mission-toolbar{grid-template-columns:1fr}}

@@ -1,0 +1,35 @@
+-- 99_drop_all_dev_only.sql
+-- DEV ONLY. This deletes all SB Connect tables in public schema.
+drop table if exists it_requests cascade;
+drop table if exists ai_chat_logs cascade;
+drop table if exists direct_messages cascade;
+drop table if exists chat_faq cascade;
+drop table if exists notification_targets cascade;
+drop table if exists notifications cascade;
+drop table if exists checkin_logs cascade;
+drop table if exists overall_logs cascade;
+drop table if exists reward_redemptions cascade;
+drop table if exists rewards cascade;
+drop table if exists point_transactions cascade;
+drop table if exists referrals cascade;
+drop table if exists user_news_reads cascade;
+drop table if exists news_posts cascade;
+drop table if exists user_missions cascade;
+drop table if exists missions cascade;
+drop table if exists admin_audit_logs cascade;
+drop table if exists drive_assets cascade;
+drop table if exists holidays cascade;
+drop table if exists manager_department_permissions cascade;
+drop table if exists user_credentials cascade;
+drop table if exists app_users cascade;
+drop table if exists positions cascade;
+drop table if exists departments cascade;
+drop table if exists app_settings cascade;
+drop type if exists message_status cascade;
+drop type if exists request_status cascade;
+drop type if exists notification_type cascade;
+drop type if exists content_status cascade;
+drop type if exists point_tx_type cascade;
+drop type if exists presence_status cascade;
+drop type if exists user_status cascade;
+drop type if exists app_role cascade;

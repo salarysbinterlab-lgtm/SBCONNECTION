@@ -1,0 +1,19 @@
+/* Extracted from User_Notifications(4).html - KEEP LEGACY UI */
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; margin: 0; }
+    .header { background: white; padding: 15px; position: sticky; top: 0; border-bottom: 1px solid #ddd; display: flex; align-items: center; }
+    .header h2 { margin: 0; font-size: 20px; flex-grow: 1; }
+    .noti-list { padding: 10px; }
+    .noti-item { background: white; padding: 12px; margin-bottom: 8px; border-radius: 8px; display: flex; align-items: center; cursor: pointer; transition: 0.3s; }
+    .noti-item:hover { background: #f2f2f2; }
+    .noti-item.unread { background: #e7f3ff; } /* สีแบบ Facebook สำหรับอันที่ยังไม่ได้อ่าน */
+    .icon-box { width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 12px; position: relative; }
+    .icon-box i { font-size: 20px; color: white; }
+    /* สีตามประเภท */
+    .bg-checkin { background-color: #45bd62; }
+    .bg-redeem { background-color: #f3425f; }
+    .bg-mission { background-color: #1877f2; }
+    .content { flex: 1; }
+    .content .title { font-weight: bold; font-size: 14px; margin-bottom: 3px; }
+    .content .detail { font-size: 13px; color: #65676b; }
+    .content .time { font-size: 11px; color: #1877f2; font-weight: bold; margin-top: 5px; }
+    .unread-dot { width: 10px; height: 10px; background: #1877f2; border-radius: 50%; }

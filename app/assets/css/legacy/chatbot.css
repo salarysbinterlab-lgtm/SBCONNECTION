@@ -1,0 +1,66 @@
+/* Extracted from chatbot(2).html - KEEP LEGACY UI */
+@import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap');
+  
+  #ai-toggle-btn { 
+    position: fixed; 
+    top: 85px; 
+    right: 20px; 
+    z-index: 2147483647; 
+    background: transparent; 
+    border: none; 
+    cursor: grab; 
+    padding: 0; 
+    width: 80px; 
+    height: 80px; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s; 
+    animation: floatMascot 3s ease-in-out infinite; 
+    outline: none;
+    /* สำคัญ: ป้องกัน browser scroll ตอนลาก */
+    touch-action: none; 
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+
+  #ai-toggle-btn:active { cursor: grabbing; animation: none; }
+
+  #ai-toggle-btn img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 8px 12px rgba(0,0,0,0.25)); pointer-events: none; }
+  
+  @keyframes floatMascot { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+
+  #ai-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(2px); z-index: 2147483645; transition: opacity 0.3s ease; }
+  #ai-overlay.hidden { opacity: 0; pointer-events: none; }
+  
+  #ai-chat-box { position: fixed; top: 0; right: 0; bottom: 0; width: 380px; max-width: 100%; background: #ffffff; box-shadow: -5px 0 30px rgba(0,0,0,0.15); display: flex; flex-direction: column; z-index: 2147483646; transform: translateX(100%); transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1); }
+  #ai-chat-box.hidden { display: none !important; }
+  #ai-chat-box:not(.hidden) { transform: translateX(0); display: flex !important; }
+  
+  .ai-header { background: linear-gradient(135deg, #2563eb, #3b82f6); color: white; padding: 18px 20px; display: flex; justify-content: space-between; align-items: center; }
+  .ai-profile { display: flex; align-items: center; gap: 12px; }
+  .ai-avatar { width: 42px; height: 42px; background: white; border-radius: 50%; overflow: hidden; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  .ai-avatar img { width: 90%; height: 90%; object-fit: contain; }
+  .ai-name { font-weight: 600; font-size: 1rem; font-family: 'Prompt'; margin: 0; }
+  .ai-status { font-size: 0.75rem; opacity: 0.9; font-family: 'Prompt'; }
+  #ai-close-btn { background: none; border: none; color: white; cursor: pointer; opacity: 0.8; transition: 0.2s; }
+  #ai-close-btn:hover { opacity: 1; transform: scale(1.1); }
+  #ai-messages { flex: 1; padding: 20px; background: #f8fafc; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; scroll-behavior: smooth; }
+  .msg-bubble { max-width: 85%; padding: 10px 14px; border-radius: 15px; font-size: 0.95rem; line-height: 1.5; font-family: 'Prompt'; word-wrap: break-word; }
+  .msg-row { display: flex; width: 100%; }
+  .msg-user { justify-content: flex-end; }
+  .msg-user .msg-bubble { background: #2563eb; color: white; border-bottom-right-radius: 2px; }
+  .msg-bot { justify-content: flex-start; }
+  .msg-bot .msg-bubble { background: white; color: #1e293b; border: 1px solid #e2e8f0; border-bottom-left-radius: 2px; }
+  .ai-input-area { padding: 15px; background: white; border-top: 1px solid #e5e7eb; display: flex; gap: 10px; align-items: center; }
+  #ai-input { flex: 1; padding: 10px 15px; border: 1px solid #e2e8f0; border-radius: 20px; outline: none; font-family: 'Prompt'; }
+  #ai-send-btn { width: 40px; height: 40px; border-radius: 50%; background: #2563eb; color: white; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
+  #ai-send-btn:hover { background: #1d4ed8; transform: scale(1.05); }
+  .hidden { opacity: 0; pointer-events: none; }
+
+  .mode-btn { background: rgba(255,255,255,0.2); border: none; border-radius: 8px; color: white; padding: 5px 10px; cursor: pointer; font-size: 1.2rem; transition: 0.2s; }
+  .mode-btn.active { background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+  .mode-btn:not(.active):hover { background: rgba(255,255,255,0.3); }
+    #ai-chat-box { width: 100%; } 
+    #ai-toggle-btn { width: 70px; height: 70px; } 
+  }

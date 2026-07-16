@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <title>Login - Carebeau</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <link rel="stylesheet" href="assets/css/pages/index-legacy.css">
+  <link rel="stylesheet" href="assets/css/legacy/security-light.css">
+</head>
+<body>
+<div class="bg-image"></div>
+
+  <div class="bubble-bg">
+    <div class="bubble bubble-1"></div>
+    <div class="bubble bubble-2"></div>
+    <div class="bubble bubble-3"></div>
+  </div>
+
+  <div class="container">
+    <div class="card">
+
+      <div id="loginForm">
+        <h2>SBinterlab Connect</h2>
+
+        <div class="input-group">
+          <input type="text" id="uid" placeholder="ระบุรหัสพนักงาน" autocomplete="username">
+        </div>
+
+        <div class="input-group">
+          <input type="password" id="upass" placeholder="ระบุรหัสผ่าน" autocomplete="current-password">
+        </div>
+
+        <button onclick="handleLogin()" id="btnLogin" class="btn-login">
+          เข้าสู่ระบบ
+        </button>
+
+        <div class="loader-area" id="loader">
+          <div class="spinner"></div>
+          <p class="loader-text">กำลังตรวจสอบข้อมูล...</p>
+        </div>
+      </div>
+
+      <div id="successForm" class="success-area">
+        <div class="success-icon">✓</div>
+
+        <h3 class="auto-text-main">
+          กำลังเข้าสู่ SBinterlab Connect
+        </h3>
+
+        <p class="auto-text-sub">
+          ระบบยืนยันสำเร็จแล้ว กำลังเปิดหน้าแอปให้อัตโนมัติ<br>
+          ไม่ต้องกดปุ่มเพิ่มเติม
+        </p>
+
+        <div class="progress-line"><span></span></div>
+
+        <a href="#" target="_top" id="finalLink" aria-hidden="true" tabindex="-1"></a>
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- FIRST LOGIN PASSWORD CHANGE PATCH -->
+  <div id="firstPasswordOverlay" class="first-password-overlay" aria-hidden="true">
+    <div class="first-password-card">
+      <div class="first-password-icon">🔐</div>
+      <h3>เปลี่ยนรหัสผ่านครั้งแรก</h3>
+      <p id="firstPasswordUserText">บัญชีนี้ใช้รหัสเริ่มต้น 1234 กรุณาตั้งรหัสใหม่ก่อนเข้าใช้งาน</p>
+
+      <label for="newPass1">รหัสผ่านใหม่</label>
+      <input
+        type="password"
+        id="newPass1"
+        maxlength="8"
+        inputmode="latin"
+        autocomplete="new-password"
+        placeholder="8 ตัว: อังกฤษ/เลข ผสมกันได้"
+        oninput="sanitizePasswordInput(this)"
+      >
+
+      <label for="newPass2">ยืนยันรหัสผ่านใหม่</label>
+      <input
+        type="password"
+        id="newPass2"
+        maxlength="8"
+        inputmode="latin"
+        autocomplete="new-password"
+        placeholder="กรอกรหัสใหม่อีกครั้ง"
+        oninput="sanitizePasswordInput(this)"
+      >
+
+      <div class="password-rule">
+        เงื่อนไข: 8 ตัวอักษรพอดี ใช้ได้เฉพาะ A-Z, a-z, 0-9 เท่านั้น<br>
+        อังกฤษกับตัวเลขผสมกันได้ เช่น Abcd1234 หรือใช้ตัวอักษร/ตัวเลขอย่างเดียวก็ได้<br>
+        ไม่รับภาษาไทย ไม่รับอักษรพิเศษ เว้นวรรค และไม่ให้ใช้ 1234 ซ้ำ
+      </div>
+
+      <div class="first-password-actions">
+        <button type="button" class="btn-soft-cancel" onclick="cancelFirstPasswordChange()">ยกเลิก</button>
+        <button type="button" class="btn-save-pass" id="btnSaveFirstPass" onclick="submitFirstPasswordChange()">บันทึกรหัสใหม่</button>
+      </div>
+    </div>
+  </div>
+<script type="module" src="assets/js/authLegacy.js"></script>
+</body>
+</html>
