@@ -25,6 +25,8 @@ type LoginResult = {
 
 const BASE = import.meta.env.BASE_URL || './';
 const COMPANY_LOGO_URL = 'https://lh3.googleusercontent.com/d/1SqzBIsXwfMzd91mgBepq6O2-nbGaZR4s';
+const INTRO_VIDEO_URL = `${BASE}icons/SB_CARE_Logo_Animation_FHD.mp4`;
+const INTRO_GIF_URL = `${BASE}icons/SB_CARE_Logo_Animation_Preview.gif`;
 
 const IMAGES: ToonImage[] = [
   { src: `${BASE}image/index_1.png`, bg: '#F4845F', panel: '#F79B7F' },
@@ -107,6 +109,10 @@ function getItemStyle(role: string, isMobile: boolean): React.CSSProperties {
 export default function App() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
+  const [showIntro, setShowIntro] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches
+  );
+  const [useIntroGif, setUseIntroGif] = useState(false);
   
   // Login Session & Views
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -141,6 +147,12 @@ export default function App() {
     window.addEventListener('resize', update);
     return () => window.removeEventListener('resize', update);
   }, []);
+
+  useEffect(() => {
+    if (!showIntro) return;
+    const timer = window.setTimeout(() => setShowIntro(false), 4200);
+    return () => window.clearTimeout(timer);
+  }, [showIntro]);
 
   // Character slide timer
   useEffect(() => {
@@ -372,6 +384,31 @@ export default function App() {
       return;
     }
     alert(message);
+  }
+
+  // Render Logged-in Dashboards based on User Roles
+  if (showIntro) {
+    return (
+      <main className="sb-mobile-intro" aria-label="SB Connect loading">
+        <div className="sb-mobile-intro-media">
+          {useIntroGif ? (
+            <img src={INTRO_GIF_URL} alt="SB Connect" className="sb-mobile-intro-asset" />
+          ) : (
+            <video
+              className="sb-mobile-intro-asset"
+              src={INTRO_VIDEO_URL}
+              poster={`${BASE}icons/icon-512.png`}
+              autoPlay
+              muted
+              playsInline
+              preload="auto"
+              onEnded={() => setShowIntro(false)}
+              onError={() => setUseIntroGif(true)}
+            />
+          )}
+        </div>
+      </main>
+    );
   }
 
   // Render Logged-in Dashboards based on User Roles

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sb-connect-runtime-v1';
+const CACHE_NAME = 'sb-connect-runtime-v2';
 const BASE_URL = new URL('./', self.location.href);
 const APP_SHELL = [
   '',
@@ -6,7 +6,9 @@ const APP_SHELL = [
   'manifest.webmanifest',
   'icons/icon-192.png',
   'icons/icon-512.png',
-  'icons/maskable-512.png'
+  'icons/maskable-512.png',
+  'icons/SB_CARE_Logo_Animation_FHD.mp4',
+  'icons/SB_CARE_Logo_Animation_Preview.gif'
 ].map((path) => new URL(path, BASE_URL).toString());
 const OFFLINE_URL = new URL('offline.html', BASE_URL).toString();
 
