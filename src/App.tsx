@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { LockKeyhole, LogIn, ShieldCheck, UserRound, X } from 'lucide-react';
+import { LockKeyhole, LogIn, UserRound, X } from 'lucide-react';
 import { rpc, setSession, getTempPassword, getToken, getCurrentUser, isSupabaseConfigured } from './helpers/api';
 import UserDashboard from './components/UserDashboard';
 import AdminDashboard from './components/AdminDashboard';
@@ -434,19 +434,8 @@ export default function App() {
         })}
       </div>
 
-      {/* Top Brand Bar */}
-      <header className="w-full p-6 flex justify-between items-center z-[48] relative">
-        <div className="sb-landing-logo-shell">
-          <img
-            src={COMPANY_LOGO_URL}
-            alt="SB Connect"
-            className="sb-landing-logo"
-            onError={(event) => {
-              event.currentTarget.style.display = 'none';
-            }}
-          />
-        </div>
-      </header>
+      {/* Top spacing */}
+      <header className="w-full p-6 z-[48] relative" aria-hidden="true" />
 
       {/* Center CTA to show Pop-up Login */}
       <div className="w-full max-w-sm mx-auto p-6 text-center z-[48] flex flex-col items-center justify-center flex-1">
@@ -495,13 +484,16 @@ export default function App() {
               <X size={16} />
             </button>
 
-            <div className="mb-6 flex items-center gap-3">
-              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-white text-black shadow-[0_12px_0_rgba(0,0,0,0.16),0_22px_45px_rgba(0,0,0,0.22)]">
-                <ShieldCheck size={22} />
-              </div>
-              <div>
-                <h3 className="text-lg font-black leading-none text-white">SBinterlab</h3>
-                <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-white/80 mt-1">Secure Connection</p>
+            <div className="mb-6 flex items-center">
+              <div className="sb-login-logo-card">
+                <img
+                  src={COMPANY_LOGO_URL}
+                  alt="SB Interlab"
+                  className="sb-login-logo"
+                  onError={(event) => {
+                    event.currentTarget.style.display = 'none';
+                  }}
+                />
               </div>
             </div>
 
