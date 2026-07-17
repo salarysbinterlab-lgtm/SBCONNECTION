@@ -43,13 +43,13 @@ for select to authenticated using (true);
 
 drop policy if exists "authenticated can read active users" on app_users;
 create policy "authenticated can read active users" on app_users
-for select to authenticated using (status = 'active' or auth.uid() = auth_user_id or is_admin());
+for select to authenticated using (status = 'active' or (select auth.uid()) = auth_user_id or is_admin());
 
 drop policy if exists "users update own presence only" on app_users;
 create policy "users update own presence only" on app_users
 for update to authenticated
-using (auth.uid() = auth_user_id or is_admin())
-with check (auth.uid() = auth_user_id or is_admin());
+using ((select auth.uid()) = auth_user_id or is_admin())
+with check ((select auth.uid()) = auth_user_id or is_admin());
 
 -- admin writes
 drop policy if exists "admin manage users" on app_users;

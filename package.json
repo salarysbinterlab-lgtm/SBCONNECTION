@@ -3,7 +3,9 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
-    "preview": "vite preview --host 127.0.0.1"
+    "preview": "vite preview --host 127.0.0.1",
+    "deploy:cloudflare": "wrangler deploy",
+    "deploy:cloudflare:dry": "wrangler deploy --dry-run"
   },
   "dependencies": {
     "@vitejs/plugin-react": "4.3.4",
@@ -16,5 +18,7 @@
     "typescript": "5.6.3",
     "vite": "5.4.19"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "wrangler": "^4.111.0"
+  }
 }

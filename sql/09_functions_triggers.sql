@@ -36,7 +36,7 @@ returns text
 language sql
 stable
 as $$
-  select emp_id from app_users where auth_user_id = auth.uid() limit 1
+  select emp_id from app_users where auth_user_id = (select auth.uid()) limit 1
 $$;
 
 create or replace function is_admin()
@@ -46,7 +46,7 @@ stable
 as $$
   select exists (
     select 1 from app_users
-    where auth_user_id = auth.uid()
+    where auth_user_id = (select auth.uid())
       and role in ('admin','admin_it','dev')
       and status = 'active'
   )
@@ -59,7 +59,7 @@ stable
 as $$
   select exists (
     select 1 from app_users
-    where auth_user_id = auth.uid()
+    where auth_user_id = (select auth.uid())
       and role in ('admin_it','dev')
       and status = 'active'
   )
