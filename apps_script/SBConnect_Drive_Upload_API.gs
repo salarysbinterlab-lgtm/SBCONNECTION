@@ -1,21 +1,49 @@
 // SBConnect_Drive_Upload_API.gs
 // Deploy: Web app / Execute as Me / Anyone with link
 // Handles Drive image uploads and lightweight audit logs to Google Sheets.
-const UPLOAD_TOKEN = "CHANGE_THIS_TOKEN_TO_MATCH_FRONTEND";
-const AUDIT_SHEET_ID = "1co7BNHIaMBu6In-CJe3U9wckjNgDJkSLFVKvuAIuuQs";
-const DRIVE_FOLDERS = {
-  avatars: "PASTE_AVATARS_FOLDER_ID",
-  news: "PASTE_NEWS_FOLDER_ID",
-  missions: "PASTE_MISSIONS_FOLDER_ID",
-  rewards: "PASTE_REWARDS_FOLDER_ID",
-  mission_evidence: "PASTE_MISSION_EVIDENCE_FOLDER_ID",
-  attachments: "PASTE_ATTACHMENTS_FOLDER_ID"
-};
+// Script Properties:
+// UPLOAD_TOKEN, AUDIT_SHEET_ID, FOLDER_PROFILE_ID, FOLDER_NEWS_ID,
+// FOLDER_MISSIONS_ID, FOLDER_REWARD_ID, optional FOLDER_MISSION_EVIDENCE_ID,
+// optional FOLDER_ATTACHMENTS_ID
+const DEFAULT_AUDIT_SHEET_ID = "1co7BNHIaMBu6In-CJe3U9wckjNgDJkSLFVKvuAIuuQs";
+
+function scriptProps() {
+  return PropertiesService.getScriptProperties();
+}
+
+function prop(name, fallback) {
+  return scriptProps().getProperty(name) || fallback || "";
+}
+
+function uploadToken() {
+  return prop("UPLOAD_TOKEN", "CHANGE_THIS_TOKEN_TO_MATCH_FRONTEND");
+}
+
+function auditSheetId() {
+  return prop("AUDIT_SHEET_ID", DEFAULT_AUDIT_SHEET_ID);
+}
+
+function driveFolders() {
+  const profileId = prop("FOLDER_PROFILE_ID");
+  const newsId = prop("FOLDER_NEWS_ID");
+  const missionsId = prop("FOLDER_MISSIONS_ID");
+  const rewardId = prop("FOLDER_REWARD_ID");
+  return {
+    avatars: profileId,
+    profile: profileId,
+    news: newsId,
+    missions: missionsId,
+    rewards: rewardId,
+    reward: rewardId,
+    mission_evidence: prop("FOLDER_MISSION_EVIDENCE_ID", missionsId),
+    attachments: prop("FOLDER_ATTACHMENTS_ID", missionsId || newsId || rewardId || profileId)
+  };
+}
 
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents || "{}");
-    if (body.token !== UPLOAD_TOKEN) return jsonOutput({ status:"error", message:"Unauthorized" });
+    if (body.token !== uploadToken()) return jsonOutput({ status:"error", message:"Unauthorized" });
 
     const type = String(body.type || "").trim();
     if (type === "log") return appendAuditLog(body.log || body);
@@ -24,7 +52,8 @@ function doPost(e) {
     const bucket = body.bucket;
     const legacyType = String(body.type || "").trim();
     const resolvedBucket = bucket || legacyTypeToBucket(legacyType);
-    if (!resolvedBucket || !DRIVE_FOLDERS[resolvedBucket]) return jsonOutput({ status:"error", message:"Invalid bucket" });
+    const folders = driveFolders();
+    if (!resolvedBucket || !folders[resolvedBucket]) return jsonOutput({ status:"error", message:"Invalid bucket or missing folder Script Property" });
 
     if (body.image_base64 && !body.base64) body.base64 = body.image_base64;
     if (body.mime_type && !body.mimeType) body.mimeType = body.mime_type;
@@ -36,7 +65,7 @@ function doPost(e) {
     const bytes = Utilities.base64Decode(cleanBase64);
     const safeName = Date.now() + "_" + sanitizeFileName(body.fileName);
     const blob = Utilities.newBlob(bytes, body.mimeType, safeName);
-    const folder = DriveApp.getFolderById(DRIVE_FOLDERS[resolvedBucket]);
+    const folder = DriveApp.getFolderById(folders[resolvedBucket]);
     const file = folder.createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     const fileId = file.getId();
@@ -103,7 +132,7 @@ function normalizeLogRow(log) {
 }
 
 function appendRowsToSheet(sheetName, rows) {
-  const ss = SpreadsheetApp.openById(AUDIT_SHEET_ID);
+  const ss = SpreadsheetApp.openById(auditSheetId());
   const sheet = getOrCreateSheet(ss, sheetName);
   if (!rows.length) return;
   sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
@@ -204,11 +233,12 @@ function jsonOutput(obj) {
 }
 
 function doGet() {
+  const folders = driveFolders();
   return jsonOutput({
     status:"success",
     service:"SB Connect Drive Upload + Sheet Audit API",
-    sheetId:AUDIT_SHEET_ID,
-    buckets:Object.keys(DRIVE_FOLDERS),
+    sheetId:auditSheetId(),
+    buckets:Object.keys(folders).filter(function(key) { return !!folders[key]; }),
     logTypes:["log","log_batch"]
   });
 }
