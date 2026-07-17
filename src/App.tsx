@@ -150,7 +150,7 @@ export default function App() {
 
   useEffect(() => {
     if (!showIntro) return;
-    const timer = window.setTimeout(() => setShowIntro(false), 4200);
+    const timer = window.setTimeout(() => setShowIntro(false), 2800);
     return () => window.clearTimeout(timer);
   }, [showIntro]);
 
@@ -397,7 +397,6 @@ export default function App() {
             <video
               className="sb-mobile-intro-asset"
               src={INTRO_VIDEO_URL}
-              poster={`${BASE}icons/icon-512.png`}
               autoPlay
               muted
               playsInline

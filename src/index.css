@@ -34,9 +34,7 @@ body {
   display: grid;
   place-items: center;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 50% 42%, rgba(20, 184, 166, .28), transparent 42%),
-    linear-gradient(180deg, #07141a 0%, #0a1f25 52%, #061014 100%);
+  background: #fff;
 }
 
 .sb-mobile-intro-media {
@@ -51,9 +49,7 @@ body {
   height: 100%;
   object-fit: contain;
   display: block;
-  filter:
-    drop-shadow(0 24px 44px rgba(0, 0, 0, .34))
-    drop-shadow(0 0 24px rgba(20, 184, 166, .22));
+  filter: none;
 }
 
 .sb-landing-logo-shell {
