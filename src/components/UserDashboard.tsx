@@ -820,11 +820,9 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
   const filteredRewards = rewardsList.filter(item =>
     item.name?.toLowerCase().includes(searchQuery.toLowerCase()) || item.detail?.toLowerCase().includes(searchQuery.toLowerCase())
   );
-  const filteredRankingList = rankingList
-    .filter(item => {
-      const haystack = `${item.emp_id || ''} ${item.full_name || item.name || ''} ${item.department || item.dept || item.dept_th || ''} ${item.role || ''}`.toLowerCase();
-      return haystack.includes(searchQuery.toLowerCase());
-    });
+  const filteredRankingList = rankingList;
+  const myRankingIndex = rankingList.findIndex(item => String(item.emp_id || '') === String(profile.emp_id || ''));
+  const myRankingNo = myRankingIndex >= 0 ? myRankingIndex + 1 : null;
   const filteredRules = rulesList
     .filter(item => (item.category || 'policy') === rulesCategory)
     .filter(item => {
@@ -2017,11 +2015,28 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                       <h3 className="text-base font-black mt-2" style={{ color: thm.text }}>{t('leaderboard')}</h3>
                       <p className="text-xs opacity-55 font-bold mt-1">{t('leaderboard_sub')}</p>
                     </div>
-                    <div className="flex items-center gap-2 rounded-2xl px-3 py-2 border mb-4"
-                      style={{ background: darkMode ? 'rgba(255,255,255,0.03)' : thm.light, borderColor: thm.border + '50' }}>
-                      <Search size={14} className="opacity-35 shrink-0" />
-                      <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-                        className="bg-transparent border-0 outline-none w-full text-xs font-bold" placeholder={t('search')} style={{ color: textColor }} />
+                    <div className="mx-auto mb-4 w-full max-w-xs rounded-3xl border px-4 py-3 text-center relative overflow-hidden"
+                      style={{
+                        background: darkMode
+                          ? 'linear-gradient(180deg, #1e293b, #0f172a)'
+                          : 'linear-gradient(180deg, #ffffff, #ecfdf5)',
+                        borderColor: thm.border + '80',
+                        boxShadow: darkMode
+                          ? '0 10px 0 rgba(15,23,42,.55), 0 18px 28px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.08)'
+                          : `0 10px 0 ${thm.border}55, 0 18px 28px rgba(15,23,42,.10), inset 0 1px 0 rgba(255,255,255,.9)`,
+                      }}>
+                      <div className="absolute inset-x-0 top-0 h-1" style={{ background: `linear-gradient(90deg, transparent, ${thm.primary}, transparent)` }} />
+                      <div className="text-[10px] font-black uppercase tracking-[0.22em] opacity-55" style={{ color: thm.text }}>
+                        My Ranking
+                      </div>
+                      <div className="mt-1 flex items-end justify-center gap-2">
+                        <span className="text-4xl font-black leading-none" style={{ color: thm.subtext }}>
+                          {myRankingNo ?? '-'}
+                        </span>
+                        <span className="pb-1 text-xs font-black opacity-60" style={{ color: thm.text }}>
+                          {lang === 'th' ? 'อันดับของฉัน' : 'My rank'}
+                        </span>
+                      </div>
                     </div>
                     <div className="grid grid-cols-3 gap-2 items-end min-h-[190px]">
                       {[1, 0, 2].map((rankIdx) => {
