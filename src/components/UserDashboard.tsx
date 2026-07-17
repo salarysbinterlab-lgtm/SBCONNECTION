@@ -3,7 +3,7 @@ import {
   Bell, Coins, CalendarCheck, Award, Newspaper, ShoppingBag, Trophy, History,
   LogOut, Search, RefreshCw, User, CheckCircle2, ShieldAlert,
   X, ChevronLeft, ChevronRight, Globe, Camera, Settings, Check, Star, Sun, Moon, List,
-  Wrench, FileText, ClipboardList, Building2, BookOpen, Sparkles, Filter, Crown
+  Wrench, FileText, ClipboardList, Building2, BookOpen, Sparkles, Crown
 } from 'lucide-react';
 import { rpc, logout, getCurrentUser } from '../helpers/api';
 import AppLoader from './AppLoader';
@@ -302,8 +302,6 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
   const [cardPreviewOpen, setCardPreviewOpen] = useState(false);
   const [toolsModalOpen, setToolsModalOpen]   = useState(false);
   const [rulesCategory, setRulesCategory]     = useState<RuleCategory>('policy');
-  const [rankingDeptFilter, setRankingDeptFilter] = useState('all');
-  const [rankingRoleFilter, setRankingRoleFilter] = useState('all');
 
   const fileInputRef  = useRef<HTMLInputElement>(null);
   const notifPanelRef = useRef<HTMLDivElement>(null);
@@ -822,11 +820,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
   const filteredRewards = rewardsList.filter(item =>
     item.name?.toLowerCase().includes(searchQuery.toLowerCase()) || item.detail?.toLowerCase().includes(searchQuery.toLowerCase())
   );
-  const rankingDepartments = Array.from(new Set(rankingList.map(item => item.department || item.dept || item.dept_th).filter(Boolean)));
-  const rankingRoles = Array.from(new Set(rankingList.map(item => item.role || item.app_role).filter(Boolean)));
   const filteredRankingList = rankingList
-    .filter(item => rankingDeptFilter === 'all' || (item.department || item.dept || item.dept_th) === rankingDeptFilter)
-    .filter(item => rankingRoleFilter === 'all' || (item.role || item.app_role) === rankingRoleFilter)
     .filter(item => {
       const haystack = `${item.emp_id || ''} ${item.full_name || item.name || ''} ${item.department || item.dept || item.dept_th || ''} ${item.role || ''}`.toLowerCase();
       return haystack.includes(searchQuery.toLowerCase());
@@ -2015,52 +2009,20 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
             {/* ─────────────────────────────────────────────────────── */}
             {activeTab === 'ranking' && (
               <div className="space-y-4 max-w-2xl mx-auto w-full">
-                <div className="rounded-3xl p-5 text-center border overflow-hidden relative" style={cardStyle}>
-                  <div className="absolute inset-0 pointer-events-none opacity-15"
-                    style={{ background: `radial-gradient(ellipse at 50% 0%,${thm.primary}50,transparent 60%)` }} />
-                  <Trophy size={40} className="mx-auto" style={{ color: '#f59e0b', filter: 'drop-shadow(0 0 12px #f59e0b60)' }} />
-                  <h3 className="text-base font-black mt-2" style={{ color: thm.text }}>{t('leaderboard')}</h3>
-                  <p className="text-xs opacity-55 font-bold mt-1">{t('leaderboard_sub')}</p>
-                </div>
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => { window.location.href = new URL('ranking_full.html', window.location.href).href; }}
-                    className="px-4 py-2 rounded-2xl text-xs font-black text-white transition active:scale-95 shadow-sm"
-                    style={{ background: thm.primary }}>
-                    Ranking Full
-                  </button>
-                </div>
-                <div className="rounded-3xl p-3 border flex flex-col gap-3" style={cardStyle}>
-                  <div className="flex items-center gap-2 rounded-2xl px-3 py-2 border"
-                    style={{ background: darkMode ? 'rgba(255,255,255,0.03)' : thm.light, borderColor: thm.border + '50' }}>
-                    <Search size={14} className="opacity-35 shrink-0" />
-                    <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-                      className="bg-transparent border-0 outline-none w-full text-xs font-bold" placeholder={t('search')} style={{ color: textColor }} />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <label className="flex items-center gap-2 rounded-2xl border px-3 py-2" style={{ borderColor: thm.border + '50' }}>
-                      <Filter size={13} style={{ color: thm.subtext }} />
-                      <select value={rankingDeptFilter} onChange={e => setRankingDeptFilter(e.target.value)}
-                        className="flex-1 bg-transparent outline-none text-xs font-black"
-                        style={{ color: textColor }}>
-                        <option value="all">{t('filter_department')}: {t('filter_all')}</option>
-                        {rankingDepartments.map(dept => <option key={String(dept)} value={String(dept)}>{String(dept)}</option>)}
-                      </select>
-                    </label>
-                    <label className="flex items-center gap-2 rounded-2xl border px-3 py-2" style={{ borderColor: thm.border + '50' }}>
-                      <ShieldAlert size={13} style={{ color: thm.subtext }} />
-                      <select value={rankingRoleFilter} onChange={e => setRankingRoleFilter(e.target.value)}
-                        className="flex-1 bg-transparent outline-none text-xs font-black"
-                        style={{ color: textColor }}>
-                        <option value="all">{t('filter_role')}: {t('filter_all')}</option>
-                        {rankingRoles.map(role => <option key={String(role)} value={String(role)}>{String(role).toUpperCase()}</option>)}
-                      </select>
-                    </label>
-                  </div>
-                </div>
-                {filteredRankingList.length > 0 && (
-                  <div className="rounded-3xl p-4 border overflow-hidden" style={cardStyle}>
+                <div className="rounded-3xl p-4 border overflow-hidden" style={cardStyle}>
+                    <div className="text-center mb-4">
+                      <div className="text-5xl leading-none select-none" style={{ filter: 'drop-shadow(0 8px 0 rgba(120,53,15,.22)) drop-shadow(0 18px 18px rgba(245,158,11,.28))' }}>
+                        🏆
+                      </div>
+                      <h3 className="text-base font-black mt-2" style={{ color: thm.text }}>{t('leaderboard')}</h3>
+                      <p className="text-xs opacity-55 font-bold mt-1">{t('leaderboard_sub')}</p>
+                    </div>
+                    <div className="flex items-center gap-2 rounded-2xl px-3 py-2 border mb-4"
+                      style={{ background: darkMode ? 'rgba(255,255,255,0.03)' : thm.light, borderColor: thm.border + '50' }}>
+                      <Search size={14} className="opacity-35 shrink-0" />
+                      <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                        className="bg-transparent border-0 outline-none w-full text-xs font-bold" placeholder={t('search')} style={{ color: textColor }} />
+                    </div>
                     <div className="grid grid-cols-3 gap-2 items-end min-h-[190px]">
                       {[1, 0, 2].map((rankIdx) => {
                         const item = filteredRankingList[rankIdx];
@@ -2103,8 +2065,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                         );
                       })}
                     </div>
-                  </div>
-                )}
+                </div>
                 <div className="space-y-2">
                   {filteredRankingList.length > 0 ? filteredRankingList.slice(3, 10).map((item: any, offset: number) => {
                     const idx = offset + 3;
