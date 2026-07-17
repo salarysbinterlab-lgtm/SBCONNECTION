@@ -24,6 +24,7 @@ type LoginResult = {
 };
 
 const BASE = import.meta.env.BASE_URL || './';
+const COMPANY_LOGO_URL = 'https://lh3.googleusercontent.com/d/1SqzBIsXwfMzd91mgBepq6O2-nbGaZR4s';
 
 const IMAGES: ToonImage[] = [
   { src: `${BASE}image/index_1.png`, bg: '#F4845F', panel: '#F79B7F' },
@@ -402,17 +403,17 @@ export default function App() {
         style={{ zIndex: 2, top: '18%' }}
       >
         <div
-          className="font-display uppercase whitespace-nowrap text-white"
+          className="sb-hero-title font-display whitespace-nowrap text-white"
           style={{
             fontFamily: "'Anton', sans-serif",
-            fontSize: 'clamp(78px, 24vw, 320px)',
+            fontSize: 'clamp(54px, 17vw, 230px)',
             fontWeight: 900,
             opacity: 0.98,
             lineHeight: 1,
-            letterSpacing: '-0.02em',
+            letterSpacing: 0,
           }}
         >
-          CAREBEAU
+          SB-Connect
         </div>
       </div>
 
@@ -435,14 +436,15 @@ export default function App() {
 
       {/* Top Brand Bar */}
       <header className="w-full p-6 flex justify-between items-center z-[48] relative">
-        <div className="flex items-center gap-2">
-          <div className="w-10 h-10 rounded-2xl bg-white text-slate-950 flex items-center justify-center font-black shadow-lg shadow-black/10">
-            SB
-          </div>
-          <div>
-            <h1 className="text-sm font-black tracking-tight text-white leading-none">SBinterlab Connect</h1>
-            <span className="text-[9px] text-white/70 font-extrabold uppercase tracking-widest leading-none">ToonHub Version</span>
-          </div>
+        <div className="sb-landing-logo-shell">
+          <img
+            src={COMPANY_LOGO_URL}
+            alt="SB Connect"
+            className="sb-landing-logo"
+            onError={(event) => {
+              event.currentTarget.style.display = 'none';
+            }}
+          />
         </div>
       </header>
 
