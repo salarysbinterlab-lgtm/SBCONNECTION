@@ -124,7 +124,14 @@ const MONTH_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','N
 const WD_TH = ['จ','อ','พ','พฤ','ศ','ส','อา'];
 const WD_EN = ['M','T','W','T','F','S','S'];
 
+const ICON_BASE = `${import.meta.env.BASE_URL || './'}icons/`;
 const COMPANY_LOGO_URL = 'https://lh3.googleusercontent.com/d/1SqzBIsXwfMzd91mgBepq6O2-nbGaZR4s';
+const NAV_LOGO_HOME = `${ICON_BASE}SB INTERLAB 3D.png`;
+const NAV_LOGO_NEWS = `${ICON_BASE}icon_news-removebg-preview.png`;
+const NAV_LOGO_TASK = `${ICON_BASE}icon_task-removebg-preview.png`;
+const NAV_LOGO_REWARDS = `${ICON_BASE}icon_transfer-removebg-preview.png`;
+const NAV_LOGO_RANKING = `${ICON_BASE}icon_ranking-removebg-preview.png`;
+const POINT_RABBIT_URL = `${ICON_BASE}icon_point-removebg-preview.png`;
 const DEFAULT_CARD_COLORS = {
   card1: '#052f3a',
   card2: '#0e98a8',
@@ -831,6 +838,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
       return haystack.includes(searchQuery.toLowerCase());
     });
   const unreadNotiCount = notifications.filter(n => !n.is_read).length;
+  const remainingPoints = Number(dashboardData?.points ?? user?.points ?? 0);
 
   // ── Computed styles ───────────────────────────────────────────────────
   const appBg = darkMode ? '#0f172a' : thm.bg;
@@ -856,16 +864,15 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
   };
 
   // ── Nav items ─────────────────────────────────────────────────────────
+  const navIcon = (src: string) => (
+    <img src={src} alt="" aria-hidden="true" className="w-7 h-7 object-contain drop-shadow-sm" />
+  );
   const navItems = [
-    { id: 'home',          icon: <User size={17} />,         label: t('home'), color: '#0ea5e9' },
-    { id: 'news',          icon: <Newspaper size={17} />,    label: t('news'), color: '#f97316' },
-    { id: 'mission',       icon: <Award size={17} />,        label: t('tasks'), color: '#8b5cf6' },
-    { id: 'rewards',       icon: <ShoppingBag size={17} />,  label: t('shop'), color: '#f59e0b' },
-    { id: 'ranking',       icon: <Trophy size={17} />,       label: t('rank'), color: '#ef4444' },
-    { id: 'tools',         icon: <Wrench size={17} />,       label: t('tools'), color: '#14b8a6' },
-    { id: 'rules',         icon: <BookOpen size={17} />,     label: t('rules'), color: '#6366f1' },
-    { id: 'logs',          icon: <History size={17} />,      label: t('history'), color: '#64748b' },
-    { id: 'settings',      icon: <Settings size={17} />,     label: t('settings'), color: '#22c55e' },
+    { id: 'home',          icon: navIcon(NAV_LOGO_HOME),     label: t('home'), color: '#0ea5e9' },
+    { id: 'news',          icon: navIcon(NAV_LOGO_NEWS),     label: t('news'), color: '#f97316' },
+    { id: 'mission',       icon: navIcon(NAV_LOGO_TASK),     label: t('tasks'), color: '#8b5cf6' },
+    { id: 'rewards',       icon: navIcon(NAV_LOGO_REWARDS),  label: t('shop'), color: '#f59e0b' },
+    { id: 'ranking',       icon: navIcon(NAV_LOGO_RANKING),  label: t('rank'), color: '#ef4444' },
   ];
   const pageTitle: Record<string, string> = {
     home: t('home'), news: t('news'), mission: t('tasks'), rewards: t('shop'),
@@ -880,7 +887,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
       className="min-h-screen flex flex-col font-sans relative overflow-x-hidden"
       style={{ backgroundColor: appBg, color: textColor, fontFamily: "'Prompt','Sarabun',sans-serif" }}
     >
-      <div className="pointer-events-none fixed inset-0 z-0 sb-backdrop-pattern opacity-70" />
+      <div className="pointer-events-none fixed inset-0 z-0 sb-backdrop-pattern opacity-70 hidden sm:block" />
 
       {/* ══════════════════════════════════════════════════════════════════
           WELCOME MODAL
@@ -1117,16 +1124,26 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                   <X size={16} />
                 </button>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {[
-                  { title: t('services'), icon: Wrench, note: lang === 'th' ? 'ศูนย์รวมบริการ' : 'Service hub' },
+                  { title: t('tools'), icon: Wrench, note: lang === 'th' ? 'ศูนย์รวมบริการ' : 'Service hub', tab: 'tools' as TabType },
+                  { title: t('rules'), icon: BookOpen, note: lang === 'th' ? 'กฎและคู่มือ' : 'Rules and guides', tab: 'rules' as TabType },
+                  { title: t('history'), icon: History, note: lang === 'th' ? 'ประวัติกิจกรรม' : 'Activity history', tab: 'logs' as TabType },
+                  { title: t('settings'), icon: Settings, note: lang === 'th' ? 'ตั้งค่าแอป' : 'App settings', tab: 'settings' as TabType },
                   { title: t('quotation'), icon: FileText, note: lang === 'th' ? 'เปิดใบเสนอราคา' : 'Create quotation' },
                   { title: t('it_request'), icon: ClipboardList, note: lang === 'th' ? 'แจ้งคำร้อง IT' : 'Open IT ticket' },
                 ].map((item, idx) => {
                   const Icon = item.icon;
                   return (
                     <button key={idx}
-                      onClick={() => showSuccess(lang === 'th' ? `เปิดเมนู ${item.title}` : `Open ${item.title}`)}
+                      onClick={() => {
+                        if ('tab' in item && item.tab) {
+                          setActiveTab(item.tab);
+                          setToolsModalOpen(false);
+                          return;
+                        }
+                        showSuccess(lang === 'th' ? `เปิดเมนู ${item.title}` : `Open ${item.title}`);
+                      }}
                       className="rounded-2xl p-4 text-left border sb-hover-lift"
                       style={{ background: darkMode ? 'rgba(255,255,255,0.04)' : thm.light, borderColor: thm.border + '55' }}>
                       <div className="w-10 h-10 rounded-2xl flex items-center justify-center mb-3" style={{ background: thm.primary, color: '#fff' }}>
@@ -1220,7 +1237,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
         <div className="flex-1 flex flex-col min-w-0 min-h-screen pb-16 lg:pb-0">
 
           {/* ── STICKY HEADER ─────────────────────────────────────────── */}
-          <header className="sticky top-0 z-40 h-14 px-4 flex items-center justify-between gap-3 backdrop-blur-md" style={headerStyle}>
+          <header className="sticky top-0 z-40 h-14 px-4 flex items-center justify-between gap-3" style={headerStyle}>
 
             {/* Zone A: Brand + Page */}
             <div className="flex items-center gap-2.5 min-w-0">
@@ -1232,6 +1249,14 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                   <Settings size={10} className="text-white" />
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setToolsModalOpen(true)}
+                className="flex items-center justify-center w-8 h-8 rounded-2xl border transition active:scale-95"
+                style={{ background: darkMode ? 'rgba(255,255,255,0.08)' : thm.light, borderColor: thm.border + '70', color: thm.subtext }}
+                aria-label="Services">
+                <Wrench size={15} />
+              </button>
               <div className="truncate min-w-0">
                 <img
                   src={COMPANY_LOGO_URL}
@@ -1332,7 +1357,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
 
           {/* ── SUBHEADER / BREADCRUMB ─────────────────────────────────── */}
           <div className="px-4 py-1.5 flex justify-between items-center border-b z-30 sticky top-14"
-            style={{ borderColor: 'rgba(255,255,255,0.08)', background: navGradient, backdropFilter: 'blur(8px)' }}>
+            style={{ borderColor: 'rgba(255,255,255,0.08)', background: navGradient }}>
             <div className="flex items-center gap-1.5">
               <span className="text-[9px] font-black uppercase tracking-widest text-slate-200/70">SB Connect</span>
               <ChevronRight size={10} className="opacity-30" />
@@ -1497,6 +1522,23 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                         </div>
                       </section>
 
+                      <div className="relative mt-3 w-[210px] sm:w-[230px] select-none pointer-events-none">
+                        <img
+                          src={POINT_RABBIT_URL}
+                          alt=""
+                          aria-hidden="true"
+                          className="w-full h-auto object-contain drop-shadow-[0_18px_24px_rgba(15,23,42,0.12)]"
+                        />
+                        <div className="absolute left-[25%] right-[25%] bottom-[16%] h-[16%] flex flex-col items-center justify-center text-center">
+                          <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wide leading-none" style={{ color: thm.text }}>
+                            {t('remaining')}
+                          </span>
+                          <span className="text-sm sm:text-base font-black leading-tight" style={{ color: thm.subtext }}>
+                            {remainingPoints.toLocaleString()} {t('pts')}
+                          </span>
+                        </div>
+                      </div>
+
                       {/* Preview & Download Button */}
                       <button onClick={e => { e.stopPropagation(); setCardPreviewOpen(true); }}
                         className="mt-4 px-4 py-2 rounded-full font-black text-xs transition active:scale-95 border hover:opacity-85 shadow-sm"
@@ -1610,7 +1652,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                       {/* Numeric Stats */}
                       <div className="grid grid-cols-2 gap-3">
                         {[
-                          { label: t('remaining'), value: ((dashboardData?.points) || user?.points || 0).toLocaleString(), unit: t('pts') },
+                          { label: t('remaining'), value: remainingPoints.toLocaleString(), unit: t('pts') },
                           { label: t('news_read_ct'), value: dashboardData?.news_read_count || 0, unit: lang === 'th' ? 'บทความ' : 'articles' },
                           { label: t('missions_ct'), value: dashboardData?.mission_done_count || 0, unit: lang === 'th' ? 'ภารกิจ' : 'missions' },
                           { label: t('rewards_ct'), value: dashboardData?.reward_count || 0, unit: lang === 'th' ? 'ครั้ง' : 'times' },
@@ -2507,7 +2549,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
           </main>
 
           {/* ── FIXED BOTTOM NAV (mobile < lg) ───────────────────────── */}
-          <nav className="fixed bottom-0 inset-x-0 h-16 flex items-center justify-start gap-1 overflow-x-auto px-2 z-40 lg:hidden backdrop-blur-md border-t"
+          <nav className="fixed bottom-0 inset-x-0 h-16 flex items-center justify-around gap-1 px-2 z-40 lg:hidden border-t"
             style={{ ...headerStyle }}>
             {navItems.map(item => (
               <button key={item.id} onClick={() => {
