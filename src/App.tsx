@@ -150,7 +150,7 @@ export default function App() {
 
   useEffect(() => {
     if (!showIntro) return;
-    const timer = window.setTimeout(() => setShowIntro(false), 2800);
+    const timer = window.setTimeout(() => setShowIntro(false), 7000);
     return () => window.clearTimeout(timer);
   }, [showIntro]);
 
