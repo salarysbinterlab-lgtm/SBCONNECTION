@@ -190,7 +190,7 @@ export default function App() {
       const allowMockLogin = !isSupabaseConfigured();
 
       // Offline mock account checks
-      if (allowMockLogin && userVal.toLowerCase() === 'admin' && passVal === 'admin123') {
+      if (allowMockLogin && userVal.toLowerCase() === 'admin' && (passVal === 'admin' || passVal === 'admin123')) {
         const adminUser = {
           emp_id: 'ADMIN',
           full_name: 'IT Administrator',
@@ -200,6 +200,12 @@ export default function App() {
           points: 9999
         };
         setSession('mock_admin_token', adminUser, passVal);
+        if (passVal === 'admin') {
+          setFirstLoginEmpId('ADMIN');
+          setShowFirstLogin(true);
+          setShowLoginModal(false);
+          return;
+        }
         setCurrentUser(adminUser);
         setIsLoggedIn(true);
         setShowLoginModal(false);
@@ -246,21 +252,21 @@ export default function App() {
         p_user_agent: navigator.userAgent,
       });
 
-      if (res.status === 'success' && res.token && res.user) {
-        setSession(res.token, res.user, passVal);
-        setCurrentUser(res.user);
-        setIsLoggedIn(true);
-        setShowLoginModal(false);
-        return;
-      }
-
-      if (res.status === 'first_setup_required' || res.mustChangePassword) {
+      if ((res.status === 'success' && res.mustChangePassword) || res.status === 'first_setup_required') {
         if (res.token && res.user) {
           setSession(res.token, res.user, passVal);
           setCurrentUser(res.user);
         }
         setFirstLoginEmpId(userVal);
         setShowFirstLogin(true);
+        setShowLoginModal(false);
+        return;
+      }
+
+      if (res.status === 'success' && res.token && res.user) {
+        setSession(res.token, res.user, passVal);
+        setCurrentUser(res.user);
+        setIsLoggedIn(true);
         setShowLoginModal(false);
         return;
       }

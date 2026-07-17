@@ -380,6 +380,19 @@ function handleMockRpc(fn: string, args: Record<string, any> = {}): any {
     case 'admin_list_ledger':
       return getList(MOCK_LOGS_KEY);
 
+    case 'admin_list_special_point_logs':
+      return getList(MOCK_LOGS_KEY).filter((l: any) => l.source_type === 'SPECIAL_POINTS');
+
+    case 'admin_list_overall_activity':
+      return getList(MOCK_LOGS_KEY).map((l: any) => ({
+        created_at: l.created_at,
+        action_group: l.source_type === 'SPECIAL_POINTS' ? 'points' : 'activity',
+        action: l.source_type || 'SYSTEM',
+        actor_emp_id: l.admin_emp_id || l.emp_id || '',
+        target_emp_id: l.target_emp_id || l.emp_id || '',
+        description: l.description || l.title || '',
+      }));
+
     case 'admin_list_manager_depts':
       return getList(MOCK_DEPTS_KEY);
 
@@ -549,6 +562,35 @@ function handleMockRpc(fn: string, args: Record<string, any> = {}): any {
       const mappings = args.p_mappings as any[];
       saveList(MOCK_DEPTS_KEY, mappings);
       return { status: 'success' };
+    }
+
+    case 'admin_add_special_points': {
+      const targetEmp = String(args.p_target_emp_id || '');
+      const points = Number(args.p_points || 0);
+      const targetIdx = users.findIndex((u: any) => u.emp_id === targetEmp);
+      if (targetIdx < 0) throw new Error('TARGET_EMP_ID_NOT_FOUND');
+      const before = Number(users[targetIdx].points || 0);
+      users[targetIdx] = { ...users[targetIdx], points: before + points };
+      saveList(MOCK_USERS_KEY, users);
+      const logs = getList(MOCK_LOGS_KEY);
+      const txId = `SP-${Date.now()}`;
+      logs.unshift({
+        id: txId,
+        tx_id: txId,
+        emp_id: targetEmp,
+        target_emp_id: targetEmp,
+        admin_emp_id: args.p_confirm_admin_emp_id,
+        hr_emp_id: args.p_hr_emp_id,
+        title: 'Special Points',
+        amount: points,
+        points,
+        balance_after: before + points,
+        created_at: new Date().toISOString(),
+        source_type: 'SPECIAL_POINTS',
+        description: args.p_reason || 'Special activity points'
+      });
+      saveList(MOCK_LOGS_KEY, logs);
+      return { status: 'success', tx_id: txId, balance_after: before + points };
     }
 
     case 'admin_reset_password': {

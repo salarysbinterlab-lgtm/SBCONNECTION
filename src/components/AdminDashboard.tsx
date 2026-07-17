@@ -13,7 +13,7 @@ import AppLoader from './AppLoader';
 // ─────────────────────────────────────────────────────────────────────────────
 type Lang = 'th' | 'en';
 type ThemeColor = 'mint' | 'ocean' | 'sunset' | 'lavender';
-type ModuleType = 'dashboard' | 'users' | 'news' | 'missions' | 'rewards' | 'ledger' | 'manager_depts' | 'calendar' | 'rules';
+type ModuleType = 'dashboard' | 'users' | 'news' | 'missions' | 'rewards' | 'special_points' | 'ledger' | 'activity' | 'manager_depts' | 'calendar' | 'rules';
 type CalendarEventType = 'holiday' | 'event' | 'note';
 
 const TRANS: Record<Lang, Record<string, string>> = {
@@ -21,7 +21,7 @@ const TRANS: Record<Lang, Record<string, string>> = {
     app_name: 'SB ADMIN', app_sub: 'ผู้ดูแลระบบ',
     search: 'ค้นหา...', refresh: 'รีเฟรช', logout_btn: 'ออกจากระบบ',
     dashboard: 'แดชบอร์ด', users: 'จัดการพนักงาน', news: 'จัดการข่าวสาร',
-    missions: 'จัดการภารกิจ', rewards: 'จัดการของรางวัล', ledger: 'ประวัติรับแต้ม',
+    missions: 'จัดการภารกิจ', rewards: 'จัดการของรางวัล', special_points: 'คะแนนพิเศษ', ledger: 'ประวัติรับแต้ม', activity: 'Overall Activity',
     manager_depts: 'ผู้จัดการแผนก', calendar: 'ปฏิทินวันหยุด', rules: 'กฎระเบียบ',
     total_users: 'พนักงานทั้งหมด', total_news: 'ข่าวสารทั้งหมด',
     total_missions: 'ภารกิจทั้งหมด', total_rewards: 'ของรางวัลทั้งหมด',
@@ -43,7 +43,7 @@ const TRANS: Record<Lang, Record<string, string>> = {
     app_name: 'SB ADMIN', app_sub: 'Management Portal',
     search: 'Search...', refresh: 'Refresh', logout_btn: 'Log Out',
     dashboard: 'Dashboard', users: 'User Manage', news: 'News Manage',
-    missions: 'Missions Manage', rewards: 'Rewards Shop', ledger: 'Point Ledger',
+    missions: 'Missions Manage', rewards: 'Rewards Shop', special_points: 'Special Points', ledger: 'Point Ledger', activity: 'Overall Activity',
     manager_depts: 'Manager Depts', calendar: 'Holiday Calendar', rules: 'Rule Board',
     total_users: 'Total Employees', total_news: 'Total News articles',
     total_missions: 'Missions created', total_rewards: 'Rewards available',
@@ -148,6 +148,14 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
   const [resetEmpId, setResetEmpId] = useState('');
   const [resetTempPass, setResetTempPass] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
+
+  // Special points adjustment
+  const [specialAdminId, setSpecialAdminId] = useState(user?.emp_id || user?.empId || '');
+  const [specialHrId, setSpecialHrId] = useState('');
+  const [specialTargetId, setSpecialTargetId] = useState('');
+  const [specialPoints, setSpecialPoints] = useState('');
+  const [specialReason, setSpecialReason] = useState('');
+  const [specialLoading, setSpecialLoading] = useState(false);
 
   // Interactive calendar click-to-note states
   const [calMonth, setCalMonth] = useState(() => new Date());
@@ -255,10 +263,20 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
         title: 'Rewards Shop Management',
         columns: ['id', 'name', 'points_required', 'stock', 'is_active']
       },
+      special_points: {
+        list: 'admin_list_special_point_logs',
+        title: 'Special Point Adjustments',
+        columns: ['created_at', 'admin_emp_id', 'hr_emp_id', 'target_emp_id', 'points', 'balance_after', 'description']
+      },
       ledger: {
         list: 'admin_list_ledger',
         title: 'Ledger History (Point transactions)',
         columns: ['created_at', 'emp_id', 'amount', 'source_type', 'description']
+      },
+      activity: {
+        list: 'admin_list_overall_activity',
+        title: 'Overall Activity Log',
+        columns: ['created_at', 'action_group', 'action', 'actor_emp_id', 'target_emp_id', 'description']
       },
       manager_depts: {
         list: 'admin_list_manager_depts',
@@ -306,6 +324,35 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
       showError(err);
     } finally {
       setResetLoading(false);
+    }
+  };
+
+  const handleAddSpecialPoints = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const amount = Number(specialPoints);
+    if (!specialAdminId.trim() || !specialHrId.trim() || !specialTargetId.trim() || !amount || amount <= 0) {
+      showError(lang === 'th' ? 'กรุณากรอก Admin ID, HR ID, User ID และคะแนนให้ครบ' : 'Please fill Admin ID, HR ID, User ID and positive points.');
+      return;
+    }
+    setSpecialLoading(true);
+    try {
+      await rpc('admin_add_special_points', {
+        p_token: token,
+        p_confirm_admin_emp_id: specialAdminId.trim(),
+        p_hr_emp_id: specialHrId.trim(),
+        p_target_emp_id: specialTargetId.trim(),
+        p_points: amount,
+        p_reason: specialReason.trim() || 'Special activity points',
+      });
+      showSuccess(lang === 'th' ? 'เพิ่มคะแนนพิเศษเรียบร้อยแล้ว' : 'Special points added successfully!');
+      setSpecialTargetId('');
+      setSpecialPoints('');
+      setSpecialReason('');
+      fetchData();
+    } catch (err) {
+      showError(err);
+    } finally {
+      setSpecialLoading(false);
     }
   };
 
@@ -599,7 +646,9 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
     { id: 'news',          label: t('news'),          icon: <Newspaper size={17} />, color: '#f97316' },
     { id: 'missions',      label: t('missions'),      icon: <Award size={17} />, color: '#8b5cf6' },
     { id: 'rewards',       label: t('rewards'),       icon: <ShoppingBag size={17} />, color: '#f59e0b' },
+    { id: 'special_points',label: t('special_points'),icon: <Plus size={17} />, color: '#10b981' },
     { id: 'ledger',        label: t('ledger'),        icon: <History size={17} />, color: '#64748b' },
+    { id: 'activity',      label: t('activity'),      icon: <ShieldCheck size={17} />, color: '#0f766e' },
     { id: 'manager_depts', label: t('manager_depts'), icon: <Network size={17} />, color: '#22c55e' },
     { id: 'calendar',      label: t('calendar'),      icon: <CalendarDays size={17} />, color: '#ef4444' },
     { id: 'rules',         label: t('rules'),         icon: <BookOpen size={17} />, color: '#6366f1' },
@@ -1046,7 +1095,90 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
             )}
 
             {/* ── MODULE: NEWS, MISSIONS, REWARDS, LEDGER ─────────────── */}
-            {['news', 'missions', 'rewards', 'ledger', 'rules'].includes(activeModule) && (
+            {activeModule === 'special_points' && (
+              <div className="space-y-4 animate-fade-in">
+                <section className="rounded-3xl p-5 border shadow-sm" style={cardStyle}>
+                  <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+                    <div>
+                      <h3 className="text-sm font-black flex items-center gap-2" style={{ color: thm.text }}>
+                        <Plus size={16} /> Special Points
+                      </h3>
+                      <p className="text-xs opacity-55 font-bold mt-1">
+                        Add extra points for special activities. Every action is logged with admin ID, HR ID, target employee, amount, reason, and balance.
+                      </p>
+                    </div>
+                    <span className="px-3 py-1 rounded-full text-[10px] font-black text-white shrink-0" style={{ background: thm.primary }}>AUDITED</span>
+                  </div>
+
+                  <form onSubmit={handleAddSpecialPoints} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3 mt-5">
+                    {[
+                      { label: 'Admin ID', value: specialAdminId, setter: setSpecialAdminId, placeholder: 'admin / admin1' },
+                      { label: 'HR / Issuer ID', value: specialHrId, setter: setSpecialHrId, placeholder: 'HR emp_id' },
+                      { label: 'User ID', value: specialTargetId, setter: setSpecialTargetId, placeholder: 'target emp_id' },
+                    ].map((field) => (
+                      <div key={field.label}>
+                        <label className="text-[9px] font-black opacity-45 uppercase block mb-1">{field.label}</label>
+                        <input required value={field.value} onChange={e => field.setter(e.target.value.replace(/[^A-Za-z0-9]/g, ''))}
+                          placeholder={field.placeholder}
+                          className="w-full bg-slate-950/5 border rounded-2xl h-11 px-4 text-xs font-bold outline-none focus:border-emerald-500"
+                          style={{ color: textColor, borderColor: thm.border + '60' }} />
+                      </div>
+                    ))}
+                    <div>
+                      <label className="text-[9px] font-black opacity-45 uppercase block mb-1">Points</label>
+                      <input required value={specialPoints} onChange={e => setSpecialPoints(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                        placeholder="e.g. 50"
+                        className="w-full bg-slate-950/5 border rounded-2xl h-11 px-4 text-xs font-bold outline-none focus:border-emerald-500"
+                        style={{ color: textColor, borderColor: thm.border + '60' }} />
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-black opacity-45 uppercase block mb-1">Reason</label>
+                      <input value={specialReason} onChange={e => setSpecialReason(e.target.value)}
+                        placeholder="activity / reason"
+                        className="w-full bg-slate-950/5 border rounded-2xl h-11 px-4 text-xs font-bold outline-none focus:border-emerald-500"
+                        style={{ color: textColor, borderColor: thm.border + '60' }} />
+                    </div>
+                    <div className="md:col-span-2 xl:col-span-5 flex justify-end">
+                      <button type="submit" disabled={specialLoading}
+                        className="px-5 py-3 rounded-2xl text-xs font-black text-white transition active:scale-95 disabled:opacity-70"
+                        style={{ background: thm.primary }}>
+                        {specialLoading ? 'Saving...' : 'Add Special Points'}
+                      </button>
+                    </div>
+                  </form>
+                </section>
+
+                <div className="rounded-3xl border overflow-hidden shadow-sm flex flex-col justify-between" style={cardStyle}>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="border-b" style={{ background: thm.light + '80', borderColor: thm.border + '30' }}>
+                          {getModuleConfig(activeModule).columns.map((h, i) => (
+                            <th key={i} className="px-4 py-3 text-[10px] font-black uppercase tracking-wider opacity-55">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paginatedRows.length > 0 ? paginatedRows.map((row, idx) => (
+                          <tr key={idx} className="border-b hover:bg-slate-500/5 transition" style={{ borderColor: thm.border + '20' }}>
+                            {getModuleConfig(activeModule).columns.map((col, i) => {
+                              const val = row[col];
+                              if (col === 'created_at') return <td key={i} className="px-4 py-3 text-[10px] opacity-45 font-bold">{formatDate(val)}</td>;
+                              if (col === 'points') return <td key={i} className="px-4 py-3 text-xs font-black text-emerald-600">+{Number(val || 0).toLocaleString()}</td>;
+                              return <td key={i} className="px-4 py-3 text-xs font-bold">{String(val !== null && val !== undefined ? val : '-')}</td>;
+                            })}
+                          </tr>
+                        )) : (
+                          <tr><td colSpan={8} className="text-center py-10 opacity-30 text-xs font-bold">No Special Point Logs</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {['news', 'missions', 'rewards', 'ledger', 'activity', 'rules'].includes(activeModule) && (
               <div className="space-y-4 animate-fade-in">
                 {activeModule === 'rules' && (
                   <section className="rounded-3xl p-5 border shadow-sm" style={cardStyle}>
