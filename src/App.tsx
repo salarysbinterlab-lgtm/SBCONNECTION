@@ -406,14 +406,14 @@ export default function App() {
           className="sb-hero-title font-display whitespace-nowrap text-white"
           style={{
             fontFamily: "'Anton', sans-serif",
-            fontSize: 'clamp(54px, 17vw, 230px)',
+            fontSize: 'clamp(78px, 24vw, 320px)',
             fontWeight: 900,
             opacity: 0.98,
             lineHeight: 1,
             letterSpacing: 0,
           }}
         >
-          SB-Connect
+          CAREBEAU
         </div>
       </div>
 
