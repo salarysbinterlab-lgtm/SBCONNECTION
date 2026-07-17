@@ -231,6 +231,27 @@ function localDateKey(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
+function parseLocalDate(value?: string) {
+  const [y, m, d] = String(value || '').split('-').map(Number);
+  if (!y || !m || !d) return new Date();
+  return new Date(y, m - 1, d);
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function formatCardDate(value?: string) {
+  const date = parseLocalDate(value);
+  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+}
+
+function cardIssueKey(empId?: string) {
+  return `sb_card_issue_${empId || 'guest'}`;
+}
+
 function videoEmbedUrl(url?: string) {
   const raw = String(url || '').trim();
   if (!raw) return '';
@@ -289,6 +310,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
   const [lightboxItem, setLightboxItem]       = useState<any | null>(null);
   const [lightboxList, setLightboxList]       = useState<any[]>([]);
   const [lightboxIdx, setLightboxIdx]         = useState(0);
+  const [cardIssueDate, setCardIssueDate]     = useState(() => localDateKey());
   const [newsViewMode, setNewsViewMode]       = useState<'grid' | 'table'>('grid');
   const [carouselIdx, setCarouselIdx]         = useState(0);
   const [calMonth, setCalMonth]               = useState(() => new Date());
@@ -305,10 +327,15 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
 
   const fileInputRef  = useRef<HTMLInputElement>(null);
   const notifPanelRef = useRef<HTMLDivElement>(null);
+  const promptedRenewRef = useRef(false);
   const token = localStorage.getItem('sb_session_token') || '';
   const t = (key: string) => TRANS[lang][key] || key;
   const thm = THEMES[theme];
   const profile = normalizeProfile(user);
+  const cardExpiryDate = localDateKey(addDays(parseLocalDate(cardIssueDate), 365));
+  const cardIssueDisplay = formatCardDate(cardIssueDate);
+  const cardExpiryDisplay = formatCardDate(cardExpiryDate);
+  const isCardExpired = localDateKey() >= cardExpiryDate;
   const topBarGradient = gradient(customTheme.topBar1, customTheme.topBar2, 135);
   const navGradient = gradient(customTheme.nav1, customTheme.nav2, 135);
   const cardGradient = gradient(cardTheme.card1, cardTheme.card2, 155);
@@ -328,6 +355,25 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
     setTheme(readSelectedTheme(profile.emp_id));
     setCustomTheme(readCustomTheme(profile.emp_id));
   }, [profile.emp_id]);
+
+  useEffect(() => {
+    if (!profile.emp_id) return;
+    const key = cardIssueKey(profile.emp_id);
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      setCardIssueDate(saved);
+      return;
+    }
+    const today = localDateKey();
+    localStorage.setItem(key, today);
+    setCardIssueDate(today);
+  }, [profile.emp_id]);
+
+  useEffect(() => {
+    if (!profile.emp_id || !isCardExpired || promptedRenewRef.current) return;
+    promptedRenewRef.current = true;
+    promptRenewCard();
+  }, [profile.emp_id, isCardExpired, cardExpiryDate]);
 
   // ── Hash routing ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -699,7 +745,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
     ctx.textAlign = 'left';
     ctx.fillText('รหัสพนักงาน : ' + (profile.emp_id || ''), 210, 725);
     ctx.fillStyle = goldGrad;
-    ctx.fillText('VALID THRU : 12/2028', 210, 770);
+    ctx.fillText('VALID THRU : ' + cardExpiryDisplay, 210, 770);
 
     // 7. Bottom Gold-Blue Wave Accents
     ctx.fillStyle = atollGrad;
@@ -791,6 +837,50 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
     if (swal) swal.fire({ icon: 'success', title: lang === 'th' ? 'สำเร็จ' : 'Success', text: msg, timer: 2200, showConfirmButton: false, background: darkMode ? '#0f172a' : '#fff', color: darkMode ? '#fff' : '#0f172a' });
     else alert(msg);
   };
+  const promptRenewCard = async () => {
+    const today = localDateKey();
+    const renew = () => {
+      localStorage.setItem(cardIssueKey(profile.emp_id), today);
+      setCardIssueDate(today);
+      showSuccess(lang === 'th' ? 'ต่ออายุบัตรพนักงานเรียบร้อยแล้ว' : 'Employee card renewed.');
+    };
+
+    const swal = (window as any).Swal;
+    if (swal) {
+      const result = await swal.fire({
+        icon: 'warning',
+        title: lang === 'th' ? 'ต่ออายุบัตรพนักงาน' : 'Renew employee card',
+        html: lang === 'th'
+          ? `บัตรพนักงานหมดอายุแล้ว<br/>วันหมดอายุเดิม: <b>${cardExpiryDisplay}</b><br/>กรอกรหัสพนักงานเพื่อยืนยันการต่อบัตร`
+          : `Your employee card has expired.<br/>Previous expiry: <b>${cardExpiryDisplay}</b><br/>Enter employee ID to renew.`,
+        input: 'text',
+        inputPlaceholder: lang === 'th' ? 'รหัสพนักงาน' : 'Employee ID',
+        inputValue: profile.emp_id || '',
+        showCancelButton: true,
+        confirmButtonText: lang === 'th' ? 'ตกลง' : 'OK',
+        cancelButtonText: lang === 'th' ? 'ยกเลิก' : 'Cancel',
+        background: darkMode ? '#0f172a' : '#fff',
+        color: darkMode ? '#fff' : '#0f172a',
+        inputValidator: (value: string) => {
+          if (String(value || '').trim() !== String(profile.emp_id || '').trim()) {
+            return lang === 'th' ? 'รหัสพนักงานไม่ตรงกัน' : 'Employee ID does not match.';
+          }
+          return null;
+        },
+      });
+      if (result.isConfirmed) renew();
+      return;
+    }
+
+    const input = window.prompt(lang === 'th' ? 'บัตรหมดอายุแล้ว กรุณากรอกรหัสพนักงานเพื่อต่ออายุ' : 'Card expired. Enter employee ID to renew.', profile.emp_id || '');
+    if (input === null) return;
+    if (String(input).trim() !== String(profile.emp_id || '').trim()) {
+      showError(new Error(lang === 'th' ? 'รหัสพนักงานไม่ตรงกัน' : 'Employee ID does not match.'));
+      return;
+    }
+    if (window.confirm(lang === 'th' ? 'ยืนยันต่อบัตรพนักงาน?' : 'Confirm employee card renewal?')) renew();
+  };
+
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '-';
     try {
@@ -981,7 +1071,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                     </div>
                     <div className="flex-1 text-left min-w-0">
                       <p className="truncate">รหัสพนักงาน: <span className="font-extrabold text-white">{profile.emp_id}</span></p>
-                      <p className="text-[8px] mt-0.5" style={{ color: '#fde68a' }}>VALID THRU: 12/2028</p>
+                      <p className="text-[8px] mt-0.5" style={{ color: '#fde68a' }}>VALID THRU: {cardExpiryDisplay}</p>
                     </div>
                   </div>
                   {/* Bottom footer wave */}
@@ -1006,11 +1096,11 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                   <div className="flex justify-between border-t border-slate-100 pt-2 mb-0.5 text-[7px] font-black text-slate-400">
                     <div className="text-left">
                       <span>วันออกบัตร (Issue)</span>
-                      <strong className="text-slate-600 block">04/2022</strong>
+                      <strong className="text-slate-600 block">{cardIssueDisplay}</strong>
                     </div>
                     <div className="text-right">
                       <span>วันหมดอายุ (Expiry)</span>
-                      <strong className="text-slate-600 block">12/2028</strong>
+                      <strong className="text-slate-600 block">{cardExpiryDisplay}</strong>
                     </div>
                   </div>
                 </div>
@@ -1466,7 +1556,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                               {/* Details */}
                               <div className="flex-1 text-left min-w-0 font-bold text-white/85 text-[10px]">
                                 <p className="truncate">รหัสพนักงาน: <span className="font-extrabold text-white">{profile.emp_id}</span></p>
-                                <p className="mt-0.5" style={{ color: '#fde68a' }}>VALID THRU : 12/2028</p>
+                                <p className="mt-0.5" style={{ color: '#fde68a' }}>VALID THRU : {cardExpiryDisplay}</p>
                               </div>
                             </div>
 
@@ -1503,11 +1593,11 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                             <div className="flex justify-between border-t border-slate-100 pt-2.5 mb-1 text-[8px] font-black text-slate-500">
                               <div className="text-left">
                                 <span className="block opacity-60">วันออกบัตร (Issue)</span>
-                                <strong className="text-slate-800 mt-0.5 block">04/2022</strong>
+                                <strong className="text-slate-800 mt-0.5 block">{cardIssueDisplay}</strong>
                               </div>
                               <div className="text-right">
                                 <span className="block opacity-60">วันหมดอายุ (Expiry)</span>
-                                <strong className="text-slate-800 mt-0.5 block">12/2028</strong>
+                                <strong className="text-slate-800 mt-0.5 block">{cardExpiryDisplay}</strong>
                               </div>
                             </div>
                           </div>
