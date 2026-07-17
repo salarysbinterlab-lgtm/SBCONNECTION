@@ -2086,7 +2086,8 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                     const idx = offset + 3;
                     const isMe = item.emp_id === profile.emp_id;
                     const dept = item.department || item.dept || item.dept_th || '-';
-                    const role = item.role || item.app_role || 'user';
+                    const displayName = item.full_name || item.name || item.emp_id || '-';
+                    const empId = item.emp_id || '-';
                     return (
                       <div key={item.emp_id || idx} className="flex items-center gap-3 p-4 rounded-2xl border transition"
                         style={{
@@ -2108,8 +2109,8 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                           </span>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <span className="text-sm font-bold block truncate" style={{ color: textColor }}>{item.full_name || item.emp_id}</span>
-                          <span className="text-[10px] opacity-45 font-bold truncate block">{item.emp_id} • {dept} • {String(role).toUpperCase()}</span>
+                          <span className="text-sm font-bold block truncate" style={{ color: textColor }}>{displayName}</span>
+                          <span className="text-[10px] opacity-45 font-bold truncate block">{lang === 'th' ? 'รหัส' : 'ID'} {empId} • {dept}</span>
                         </div>
                         {isMe && <span className="text-[10px] font-black px-2 py-0.5 rounded-full text-white shrink-0" style={{ background: thm.primary }}>YOU</span>}
                         <span className="text-sm font-black shrink-0" style={{ color: thm.subtext }}>{Number(item.points || 0).toLocaleString()} {t('pts')}</span>
