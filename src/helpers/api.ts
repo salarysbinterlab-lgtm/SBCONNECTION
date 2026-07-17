@@ -11,6 +11,8 @@ export function getConfig() {
   return {
     supabaseUrl: 'https://tmcbblwfucwauksenqqr.supabase.co',
     supabaseAnonKey: 'sb_publishable__eAshDr5vo6TBNDJ4VNRUg_tRPp2Wov',
+    driveUploadEndpoint: 'PASTE_APPS_SCRIPT_WEB_APP_URL_HERE',
+    driveUploadToken: 'CHANGE_THIS_TOKEN_TO_MATCH_APPS_SCRIPT',
   };
 }
 
@@ -61,6 +63,72 @@ export function setSession(token: string, user: any, tempPassword = '') {
   localStorage.setItem(USER_KEY, JSON.stringify(normalizedUser));
   if (tempPassword) {
     sessionStorage.setItem(TMP_PASS_KEY, tempPassword);
+  }
+}
+
+function redactForLog(value: any): any {
+  if (value === null || value === undefined) return value;
+  if (Array.isArray(value)) return value.map(redactForLog);
+  if (typeof value !== 'object') return value;
+
+  const blocked = /password|pass|token|secret|key|authorization|image_base64|base64/i;
+  return Object.fromEntries(Object.entries(value).map(([key, val]) => {
+    if (blocked.test(key)) return [key, '[redacted]'];
+    return [key, redactForLog(val)];
+  }));
+}
+
+function actionGroupFromRpc(fn: string) {
+  const name = String(fn || '').toLowerCase();
+  if (name.includes('login') || name.includes('session') || name.includes('logout')) return 'auth';
+  if (name.includes('admin')) return 'admin';
+  if (name.includes('point') || name.includes('checkin') || name.includes('ledger')) return 'points';
+  if (name.includes('news')) return 'news';
+  if (name.includes('mission')) return 'missions';
+  if (name.includes('reward') || name.includes('redeem')) return 'rewards';
+  if (name.includes('ranking')) return 'ranking';
+  if (name.includes('profile') || name.includes('avatar') || name.includes('user')) return 'profile';
+  return 'system';
+}
+
+function emitOverallLog(fn: string, args: Record<string, unknown>, status: 'success' | 'error', message = '') {
+  try {
+    if (typeof window === 'undefined') return;
+    const cfg = getConfig();
+    const endpoint = cfg.driveUploadEndpoint || cfg.auditLogEndpoint || '';
+    const token = cfg.driveUploadToken || cfg.auditLogToken || '';
+    if (!endpoint || endpoint.includes('PASTE_') || !token || token.includes('CHANGE_')) return;
+
+    const current = getCurrentUser();
+    const cleanedArgs = redactForLog(args || {});
+    const payload = {
+      token,
+      type: 'log',
+      log: {
+        action_group: actionGroupFromRpc(fn),
+        action: fn,
+        status,
+        actor_emp_id: current?.emp_id || current?.empId || (args?.p_emp_id as string) || '',
+        target_emp_id: (args?.p_target_emp_id as string) || (args?.p_emp_id as string) || (args?.p_emp_id_target as string) || '',
+        target_table: '',
+        target_id: '',
+        description: message,
+        metadata: {
+          rpc: fn,
+          args: cleanedArgs,
+          path: window.location.hash || window.location.pathname,
+          user_agent: navigator.userAgent,
+        },
+      },
+    };
+    const text = JSON.stringify(payload);
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(endpoint, new Blob([text], { type: 'application/json' }));
+      return;
+    }
+    fetch(endpoint, { method: 'POST', mode: 'no-cors', body: text }).catch(() => {});
+  } catch {
+    // Audit export must never block app usage.
   }
 }
 
@@ -652,13 +720,17 @@ export async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Pr
 
     if (!res.ok) {
       const obj = data as { message?: string; error?: string; details?: string };
-      throw new Error(obj?.message || obj?.error || obj?.details || rawText || `RPC error: ${fn}`);
+      const msg = obj?.message || obj?.error || obj?.details || rawText || `RPC error: ${fn}`;
+      emitOverallLog(fn, args, 'error', msg);
+      throw new Error(msg);
     }
 
     if (data?.status === 'error') {
+      emitOverallLog(fn, args, 'error', data.message || 'RPC_ERROR');
       throw new Error(data.message || 'RPC_ERROR');
     }
 
+    emitOverallLog(fn, args, 'success');
     return data as T;
   } catch (err) {
     if (isPlaceholder) {
