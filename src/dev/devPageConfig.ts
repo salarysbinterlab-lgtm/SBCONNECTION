@@ -2,7 +2,7 @@ export const DEV_PAGE_CONFIG = {
   ghostText: "CAREBEAU",
   loginTitle: "SBinterlab Connect",
   loginSubtitle: "Secure Login",
-  firstLoginNote: "First login ใช้รหัสเริ่มต้น 1234 แล้วระบบจะให้เปลี่ยนรหัส 8 ตัว",
+  firstLoginNote: "First login ใช้รหัสพนักงานเป็นรหัสผ่าน แล้วระบบจะให้เปลี่ยนรหัส 8 ตัว",
 
   carousel: {
     intervalMs: 3000,

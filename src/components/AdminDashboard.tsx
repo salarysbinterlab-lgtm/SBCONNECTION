@@ -146,7 +146,7 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
 
   // Reset Password State
   const [resetEmpId, setResetEmpId] = useState('');
-  const [resetTempPass, setResetTempPass] = useState('1234');
+  const [resetTempPass, setResetTempPass] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
 
   // Interactive calendar click-to-note states
@@ -296,11 +296,11 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
       await rpc('admin_reset_password', {
         p_token: token,
         p_emp_id: resetEmpId.trim(),
-        p_temp_password: resetTempPass.trim() || '1234'
+        p_temp_password: resetTempPass.trim()
       });
       showSuccess(lang === 'th' ? `รีเซ็ตรหัสผ่านพนักงาน ${resetEmpId} เรียบร้อยแล้ว!` : `Reset password for ${resetEmpId} successfully!`);
       setResetEmpId('');
-      setResetTempPass('1234');
+      setResetTempPass('');
       if (activeModule === 'dashboard') fetchData();
     } catch (err) {
       showError(err);
@@ -854,8 +854,8 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
                         </div>
                         <div>
                           <label className="text-[9px] font-black opacity-45 uppercase block mb-1">Temporary Password</label>
-                          <input required value={resetTempPass} onChange={e => setResetTempPass(e.target.value.replace(/[^A-Za-z0-9]/g, ''))}
-                            placeholder="e.g. 1234"
+                          <input value={resetTempPass} onChange={e => setResetTempPass(e.target.value.replace(/[^A-Za-z0-9]/g, ''))}
+                            placeholder="เว้นว่าง = ใช้รหัสพนักงาน"
                             className="w-full bg-slate-950/5 border rounded-2xl h-10 px-4 text-xs font-bold outline-none focus:border-emerald-500"
                             style={{ color: textColor, borderColor: thm.border + '60' }} />
                         </div>

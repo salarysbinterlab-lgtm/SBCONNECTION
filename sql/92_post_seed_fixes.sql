@@ -13,8 +13,16 @@ set password_reset_by_emp_id = null
 where password_reset_by_emp_id is not null
   and not exists (select 1 from app_users u2 where u2.emp_id = app_users.password_reset_by_emp_id);
 
--- สร้าง/เติมรหัสเริ่มต้น 1234 เฉพาะคนที่ยังไม่มี credential
-select public.prepare_first_login_credentials('1234');
+-- สร้าง/เติมรหัสเริ่มต้นเป็นรหัสพนักงาน เฉพาะคนที่ยังไม่มี credential
+select public.prepare_first_login_credentials(null);
+
+update user_credentials c
+set password_hash = public.sb_hash_password(c.emp_id),
+    reset_at = now()
+from app_users u
+where u.emp_id = c.emp_id
+  and u.status = 'active'
+  and (coalesce(c.must_change, false) = true or coalesce(u.force_password_change, false) = true);
 
 -- Recalculate point summary from imported point_transactions
 select public.recalc_user_points(emp_id) from app_users;

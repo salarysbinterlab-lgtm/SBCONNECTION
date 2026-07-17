@@ -34,12 +34,12 @@ returns boolean language sql security definer set search_path = public stable as
   select coalesce(public_session_role(p_token) in ('admin','admin_it','dev'), false)
 $$;
 
-create or replace function public.prepare_first_login_credentials(p_temp_password text default '1234')
+create or replace function public.prepare_first_login_credentials(p_temp_password text default null)
 returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 declare v_count int;
 begin
   insert into user_credentials(emp_id, password_hash, must_change, reset_at)
-  select u.emp_id, public.sb_hash_password(p_temp_password), true, now()
+  select u.emp_id, public.sb_hash_password(coalesce(nullif(trim(p_temp_password), ''), u.emp_id)), true, now()
   from app_users u
   left join user_credentials c on c.emp_id = u.emp_id
   where c.emp_id is null and u.status = 'active';
@@ -380,7 +380,7 @@ begin
   return jsonb_build_object('status','success','id',v_id);
 end $$;
 
-create or replace function public.admin_reset_user_password(p_token uuid, p_target_emp_id text, p_temp_password text default '1234')
+create or replace function public.admin_reset_user_password(p_token uuid, p_target_emp_id text, p_temp_password text default null)
 returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 declare v_actor text;
 begin
@@ -396,6 +396,25 @@ begin
   update app_users set force_password_change = true, password_reset_at = now(), password_reset_by_emp_id = v_actor, updated_at = now() where emp_id = p_target_emp_id;
   insert into admin_audit_logs(actor_emp_id, action, target_table, target_id, after_data) values(v_actor,'RESET_PASSWORD','app_users',p_target_emp_id,jsonb_build_object('must_change',true));
   return jsonb_build_object('status','success','message','Reset password สำเร็จ');
+end $$;
+
+create or replace function public.admin_reset_user_password(p_token uuid, p_target_emp_id text, p_temp_password text default null)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare v_actor text; v_temp_password text;
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_object('status','error','message','ADMIN_ONLY'); end if;
+  v_actor := public_session_emp_id(p_token);
+  if not exists(select 1 from app_users where emp_id = p_target_emp_id) then
+    return jsonb_build_object('status','error','message','Target employee ID not found');
+  end if;
+  v_temp_password := coalesce(nullif(trim(p_temp_password), ''), p_target_emp_id);
+  insert into user_credentials(emp_id, password_hash, must_change, reset_at, reset_by_emp_id)
+  values (p_target_emp_id, public.sb_hash_password(v_temp_password), true, now(), v_actor)
+  on conflict (emp_id) do update set password_hash = excluded.password_hash, must_change = true, reset_at = now(), reset_by_emp_id = v_actor;
+  update app_users set force_password_change = true, password_reset_at = now(), password_reset_by_emp_id = v_actor, updated_at = now() where emp_id = p_target_emp_id;
+  insert into admin_audit_logs(actor_emp_id, action, target_table, target_id, after_data)
+  values(v_actor,'RESET_PASSWORD','app_users',p_target_emp_id,jsonb_build_object('must_change',true,'initial_password','emp_id'));
+  return jsonb_build_object('status','success','message','Reset password success: temporary password = employee ID');
 end $$;
 
 -- Grants

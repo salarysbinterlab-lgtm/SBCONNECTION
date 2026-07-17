@@ -207,7 +207,7 @@ export default function App() {
       }
 
       if (allowMockLogin && userVal === '3672') {
-        if (passVal === '1234') {
+        if (passVal === userVal) {
           // Force password change!
           const tempUser = {
             emp_id: '3672',
@@ -223,7 +223,7 @@ export default function App() {
           setShowLoginModal(false);
           return;
         } else {
-          // Log in with non-1234 password directly
+          // Log in with a changed password directly
           const testUser = {
             emp_id: '3672',
             full_name: 'คุณพนักงานทดสอบ (Test Employee)',
@@ -285,8 +285,8 @@ export default function App() {
       return;
     }
 
-    if (newPass1 === '1234') {
-      showError(new Error('ห้ามใช้ 1234 ซ้ำ'));
+    if (newPass1 === (firstLoginEmpId || empId.trim())) {
+      showError(new Error('ห้ามใช้รหัสพนักงานซ้ำ'));
       return;
     }
 
@@ -490,7 +490,7 @@ export default function App() {
             เข้าสู่ระบบ (Login to Connect)
           </button>
           <p className="text-[10px] text-white/50 font-bold leading-normal">
-            รหัสผ่านเริ่มต้นคือ 1234 สำหรับการเปิดใช้งานครั้งแรก
+            รหัสผ่านเริ่มต้นคือรหัสพนักงาน สำหรับการเปิดใช้งานครั้งแรก
           </p>
         </div>
       </div>
@@ -578,7 +578,7 @@ export default function App() {
             </div>
 
             <div className="mt-5 rounded-2xl border border-white/10 bg-black/25 px-4 py-2.5 text-center text-[10px] font-bold leading-normal text-white/80 shadow-inner">
-              * สมาชิกใหม่กรุณาใช้รหัสเริ่มต้น <span className="text-emerald-300 font-black">1234</span>
+              * สมาชิกใหม่กรุณาใช้รหัสพนักงานเป็นรหัสผ่านเริ่มต้น
             </div>
           </form>
         </div>
@@ -626,7 +626,7 @@ export default function App() {
               </div>
 
               <div className="rounded-2xl bg-emerald-500/5 border border-emerald-500/10 p-3.5 text-[10px] font-bold leading-normal text-emerald-400/90 shadow-inner">
-                * เงื่อนไข: รหัสต้องมีความยาว 8 ตัวพอดี ประกอบด้วย A-Z, a-z หรือ 0-9 เท่านั้น (ห้ามใช้อักขระพิเศษและห้ามใช้ 1234 ซ้ำ)
+                * เงื่อนไข: รหัสต้องมีความยาว 8 ตัวพอดี ประกอบด้วย A-Z, a-z หรือ 0-9 เท่านั้น (ห้ามใช้อักขระพิเศษและห้ามใช้รหัสพนักงานซ้ำ)
               </div>
 
               <div className="flex gap-3 pt-2">

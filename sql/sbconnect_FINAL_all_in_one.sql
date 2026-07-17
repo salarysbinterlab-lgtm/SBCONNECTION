@@ -977,12 +977,12 @@ returns boolean language sql security definer set search_path = public stable as
   select coalesce(public_session_role(p_token) in ('admin','admin_it','dev'), false)
 $$;
 
-create or replace function public.prepare_first_login_credentials(p_temp_password text default '1234')
+create or replace function public.prepare_first_login_credentials(p_temp_password text default null)
 returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 declare v_count int;
 begin
   insert into user_credentials(emp_id, password_hash, must_change, reset_at)
-  select u.emp_id, public.sb_hash_password(p_temp_password), true, now()
+  select u.emp_id, public.sb_hash_password(coalesce(nullif(trim(p_temp_password), ''), u.emp_id)), true, now()
   from app_users u
   left join user_credentials c on c.emp_id = u.emp_id
   where c.emp_id is null and u.status = 'active';
@@ -2823,7 +2823,15 @@ where password_reset_by_emp_id is not null
   and not exists (select 1 from app_users u2 where u2.emp_id = app_users.password_reset_by_emp_id);
 
 -- สร้าง/เติมรหัสเริ่มต้น 1234 เฉพาะคนที่ยังไม่มี credential
-select public.prepare_first_login_credentials('1234');
+select public.prepare_first_login_credentials(null);
+
+update user_credentials c
+set password_hash = public.sb_hash_password(c.emp_id),
+    reset_at = now()
+from app_users u
+where u.emp_id = c.emp_id
+  and u.status = 'active'
+  and (coalesce(c.must_change, false) = true or coalesce(u.force_password_change, false) = true);
 
 -- Recalculate point summary from imported point_transactions
 select public.recalc_user_points(emp_id) from app_users;

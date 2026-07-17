@@ -408,7 +408,7 @@ begin
   return jsonb_build_object('status','success');
 end $$;
 
-create or replace function public.admin_reset_password(p_token uuid, p_emp_id text, p_temp_password text default '1234')
+create or replace function public.admin_reset_password(p_token uuid, p_emp_id text, p_temp_password text default null)
 returns jsonb language sql security definer set search_path = public as $$
   select public.admin_reset_user_password(p_token, p_emp_id, p_temp_password)
 $$;
