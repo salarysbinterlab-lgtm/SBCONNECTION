@@ -1,12 +1,14 @@
 import { useEffect, useState, useRef } from 'react';
+import DOMPurify from 'dompurify';
 import {
   Bell, Coins, CalendarCheck, Award, Newspaper, ShoppingBag, Trophy, History,
   LogOut, Search, RefreshCw, User, CheckCircle2, ShieldAlert,
   X, ChevronLeft, ChevronRight, Globe, Camera, Settings, Check, Star, Sun, Moon, List,
   Wrench, FileText, ClipboardList, Building2, BookOpen, Sparkles, Crown
 } from 'lucide-react';
-import { rpc, logout, getCurrentUser } from '../helpers/api';
+import { rpc, logout, getCurrentUser, uploadDriveFile } from '../helpers/api';
 import AppLoader from './AppLoader';
+import QuotationWorkspace from './QuotationWorkspace';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -290,6 +292,8 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
   const [newsList, setNewsList]             = useState<any[]>([]);
   const [missionsList, setMissionsList]     = useState<any[]>([]);
   const [rewardsList, setRewardsList]       = useState<any[]>([]);
+  const [myRedemptions, setMyRedemptions]   = useState<any[]>([]);
+  const [missionEvidenceFiles, setMissionEvidenceFiles] = useState<Record<string, File>>({});
   const [rankingList, setRankingList]       = useState<any[]>([]);
   const [notifications, setNotifications]   = useState<any[]>([]);
   const [logsList, setLogsList]             = useState<any[]>([]);
@@ -323,6 +327,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
   });
   const [cardPreviewOpen, setCardPreviewOpen] = useState(false);
   const [toolsModalOpen, setToolsModalOpen]   = useState(false);
+  const [quotationOpen, setQuotationOpen]     = useState(false);
   const [rulesCategory, setRulesCategory]     = useState<RuleCategory>('policy');
 
   const fileInputRef  = useRef<HTMLInputElement>(null);
@@ -479,8 +484,12 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
   const fetchRewards = async () => {
     setLoading(true);
     try {
-      const data = await rpc<any>('list_rewards', { p_token: token });
+      const [data, redemptions] = await Promise.all([
+        rpc<any>('list_rewards', { p_token: token }),
+        rpc<any>('list_my_redemptions', { p_token: token }),
+      ]);
       setRewardsList(Array.isArray(data) ? data : (data?.items || data?.rewards || []));
+      setMyRedemptions(Array.isArray(redemptions) ? redemptions : (redemptions?.items || []));
     } catch (err) { showError(err); } finally { setLoading(false); }
   };
 
@@ -556,10 +565,29 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
     } catch (err) { showError(err); }
   };
 
-  const handleSubmitMission = async (missionId: string) => {
+  const handleSubmitMission = async (mission: any) => {
     try {
-      const res = await rpc<any>('submit_mission', { p_token: token, p_mission_id: missionId });
+      let evidenceUrl: string | null = null;
+      if (mission.requires_evidence) {
+        const evidence = missionEvidenceFiles[String(mission.id)];
+        if (!evidence) throw new Error(lang === 'th' ? 'กรุณาแนบหลักฐานก่อนส่งภารกิจ' : 'Please attach evidence before submitting.');
+        const uploaded = await uploadDriveFile(evidence, 'mission_evidence', {
+          emp_id: profile.emp_id,
+          mission_id: mission.id,
+        });
+        evidenceUrl = uploaded.directUrl || uploaded.viewUrl;
+      }
+      const res = await rpc<any>('submit_mission', {
+        p_token: token,
+        p_mission_id: mission.id,
+        p_evidence_url: evidenceUrl,
+      });
       showSuccess(res.message || 'ส่งภารกิจเสร็จสิ้น!');
+      setMissionEvidenceFiles(prev => {
+        const next = { ...prev };
+        delete next[String(mission.id)];
+        return next;
+      });
       fetchMissions();
     } catch (err) { showError(err); }
   };
@@ -597,18 +625,32 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
     fetchNotifications();
   };
 
-  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const b64 = ev.target?.result as string;
-      setAvatarUrl(b64);
-      localStorage.setItem('sb_avatar_' + (profile.emp_id || ''), b64);
-      showSuccess(lang === 'th' ? 'เปลี่ยนรูปโปรไฟล์สำเร็จ!' : 'Profile photo updated!');
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
+    setLoading(true);
+    try {
+      const uploaded = await uploadDriveFile(file, 'profile', { emp_id: profile.emp_id });
+      const saved = await rpc<any>('public_save_my_avatar', {
+        p_token: token,
+        p_display_url: uploaded.directUrl,
+        p_drive_file_id: uploaded.fileId,
+        p_file_name: uploaded.fileName,
+        p_mime_type: uploaded.mimeType,
+      });
+      const nextAvatar = saved?.avatarUrl || uploaded.directUrl;
+      setAvatarUrl(nextAvatar);
+      const nextUser = { ...user, avatar_url: nextAvatar, avatar: nextAvatar };
+      setUser(nextUser);
+      localStorage.setItem('sb_current_user', JSON.stringify(nextUser));
+      localStorage.removeItem('sb_avatar_' + (profile.emp_id || ''));
+      showSuccess(lang === 'th' ? 'อัปเดตรูปโปรไฟล์เรียบร้อยแล้ว!' : 'Profile photo updated!');
+    } catch (err) {
+      showError(err);
+    } finally {
+      setLoading(false);
+      e.target.value = '';
+    }
   };
 
   const handleDownloadCard = () => {
@@ -971,6 +1013,15 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
     >
       <div className="pointer-events-none fixed inset-0 z-0 sb-backdrop-pattern opacity-70 hidden sm:block" />
 
+      {quotationOpen && (
+        <QuotationWorkspace
+          user={profile}
+          dark={darkMode}
+          lang={lang}
+          onClose={() => setQuotationOpen(false)}
+        />
+      )}
+
       {/* ══════════════════════════════════════════════════════════════════
           WELCOME MODAL
       ══════════════════════════════════════════════════════════════════ */}
@@ -1212,13 +1263,18 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                   { title: t('rules'), icon: BookOpen, note: lang === 'th' ? 'กฎและคู่มือ' : 'Rules and guides', tab: 'rules' as TabType },
                   { title: t('history'), icon: History, note: lang === 'th' ? 'ประวัติกิจกรรม' : 'Activity history', tab: 'logs' as TabType },
                   { title: t('settings'), icon: Settings, note: lang === 'th' ? 'ตั้งค่าแอป' : 'App settings', tab: 'settings' as TabType },
-                  { title: t('quotation'), icon: FileText, note: lang === 'th' ? 'เปิดใบเสนอราคา' : 'Create quotation' },
+                  { title: t('quotation'), icon: FileText, note: lang === 'th' ? 'เปิดใบเสนอราคา' : 'Create quotation', action: 'quotation' as const },
                   { title: t('it_request'), icon: ClipboardList, note: lang === 'th' ? 'แจ้งคำร้อง IT' : 'Open IT ticket' },
                 ].map((item, idx) => {
                   const Icon = item.icon;
                   return (
                     <button key={idx}
                       onClick={() => {
+                        if ('action' in item && item.action === 'quotation') {
+                          setToolsModalOpen(false);
+                          setQuotationOpen(true);
+                          return;
+                        }
                         if ('tab' in item && item.tab) {
                           setActiveTab(item.tab);
                           setToolsModalOpen(false);
@@ -1794,7 +1850,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                               <h5 className="text-xs font-black truncate" style={{ color: textColor }}>{item.title}</h5>
                               <p className="text-[10px] opacity-45 truncate">{item.description}</p>
                             </div>
-                            <button onClick={() => handleSubmitMission(item.id)}
+                            <button onClick={() => item.requires_evidence ? setActiveTab('mission') : handleSubmitMission(item)}
                               className="px-2.5 py-1 rounded-xl text-[10px] font-black text-white shrink-0 active:scale-95 transition"
                               style={{ background: thm.primary }}>
                               +{item.points}
@@ -2006,7 +2062,9 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {filteredMissions.length > 0 ? filteredMissions.map(item => {
-                    const isDone = item.is_done || item.done;
+                    const missionStatus = String(item.submission_status || '').toLowerCase();
+                    const isPending = missionStatus === 'pending';
+                    const isDone = Boolean(item.is_done || item.done || missionStatus === 'approved' || missionStatus === 'completed');
                     return (
                       <article key={item.id} className="rounded-3xl overflow-hidden border shadow-sm flex flex-col"
                         style={{ background: darkMode ? '#1e293b' : '#fff', border: `1px solid ${isDone ? thm.primary + '50' : thm.cardBorder + '50'}` }}>
@@ -2026,11 +2084,24 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                             <p className="text-xs opacity-55 line-clamp-3 leading-relaxed">{item.description || item.detail}</p>
                           </div>
                           <div className="flex justify-between items-center mt-3 pt-3 border-t" style={{ borderColor: thm.border + '30' }}>
+                          {item.requires_evidence && !isDone && !isPending && (
+                            <label className="mt-3 block rounded-2xl border border-dashed p-2.5 text-[10px] font-bold cursor-pointer"
+                              style={{ borderColor: thm.border + '70', color: thm.subtext }}>
+                              {missionEvidenceFiles[String(item.id)]
+                                ? missionEvidenceFiles[String(item.id)].name
+                                : (lang === 'th' ? 'แนบหลักฐาน (รูปภาพ/PDF)' : 'Attach evidence (image/PDF)')}
+                              <input type="file" accept="image/*,application/pdf" className="hidden"
+                                onChange={e => {
+                                  const file = e.target.files?.[0];
+                                  if (file) setMissionEvidenceFiles(prev => ({ ...prev, [String(item.id)]: file }));
+                                }} />
+                            </label>
+                          )}
                             <span className="text-[10px] opacity-35 font-bold">{formatDate(item.created_at)}</span>
-                            <button onClick={() => handleSubmitMission(item.id)} disabled={isDone}
+                            <button onClick={() => handleSubmitMission(item)} disabled={isDone || isPending}
                               className="px-3 py-1.5 rounded-xl text-xs font-black transition active:scale-95 disabled:cursor-not-allowed"
-                              style={{ background: isDone ? (darkMode ? '#334155' : '#d1fae5') : thm.primary, color: isDone ? (darkMode ? '#6ee7b7' : '#065f46') : '#fff' }}>
-                              {isDone ? t('done') : t('submit')}
+                              style={{ background: (isDone || isPending) ? (darkMode ? '#334155' : '#d1fae5') : thm.primary, color: (isDone || isPending) ? (darkMode ? '#6ee7b7' : '#065f46') : '#fff' }}>
+                              {isPending ? (lang === 'th' ? 'รอตรวจสอบ' : 'Pending') : isDone ? t('done') : t('submit')}
                             </button>
                           </div>
                         </div>
@@ -2054,6 +2125,29 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                       className="bg-transparent border-0 outline-none w-full text-xs font-bold" placeholder={t('search')} style={{ color: textColor }} />
                   </div>
                 </div>
+                {myRedemptions.length > 0 && (
+                  <section className="rounded-3xl border p-4" style={cardStyle}>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-xs font-black" style={{ color: textColor }}>
+                        {lang === 'th' ? 'สถานะการแลกรางวัลล่าสุด' : 'Recent redemption status'}
+                      </h3>
+                      <span className="text-[10px] opacity-45">{myRedemptions.length}</span>
+                    </div>
+                    <div className="space-y-2">
+                      {myRedemptions.slice(0, 5).map((redemption: any) => (
+                        <div key={redemption.redemption_id || redemption.id} className="flex items-center justify-between gap-3 rounded-2xl border px-3 py-2"
+                          style={{ borderColor: thm.border + '35' }}>
+                          <div className="min-w-0">
+                            <p className="text-xs font-black truncate" style={{ color: textColor }}>{redemption.reward_name}</p>
+                            <p className="text-[10px] opacity-45">{formatDate(redemption.redeemed_at)}</p>
+                          </div>
+                          <span className="shrink-0 rounded-full px-2 py-1 text-[10px] font-black"
+                            style={{ background: thm.light, color: thm.primary }}>{redemption.status}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {filteredRewards.length > 0 ? filteredRewards.map(item => {
                     const cost = item.points_required || item.points_cost || 0;
@@ -2236,13 +2330,19 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {[
-                    { title: t('services'), icon: Wrench, detail: lang === 'th' ? 'บริการและแบบฟอร์มที่ใช้บ่อย' : 'Common services and forms' },
-                    { title: t('quotation'), icon: FileText, detail: lang === 'th' ? 'เปิดใบขอ quotation สำหรับงานขาย/จัดซื้อ' : 'Open a quotation request' },
-                    { title: t('it_request'), icon: ClipboardList, detail: lang === 'th' ? 'แจ้งซ่อม ขออุปกรณ์ หรือขอความช่วยเหลือ IT' : 'Submit an IT support request' },
+                    { title: t('services'), icon: Wrench, detail: lang === 'th' ? 'บริการและแบบฟอร์มที่ใช้บ่อย' : 'Common services and forms', action: 'menu' as const },
+                    { title: t('quotation'), icon: FileText, detail: lang === 'th' ? 'เปิดใบขอ quotation สำหรับงานขาย/จัดซื้อ' : 'Open a quotation request', action: 'quotation' as const },
+                    { title: t('it_request'), icon: ClipboardList, detail: lang === 'th' ? 'แจ้งซ่อม ขออุปกรณ์ หรือขอความช่วยเหลือ IT' : 'Submit an IT support request', action: 'it' as const },
                   ].map((item, idx) => {
                     const Icon = item.icon;
                     return (
-                      <button key={idx} onClick={() => setToolsModalOpen(true)}
+                      <button key={idx} onClick={() => {
+                        if (item.action === 'quotation') {
+                          setQuotationOpen(true);
+                          return;
+                        }
+                        setToolsModalOpen(true);
+                      }}
                         className="text-left rounded-3xl p-5 border shadow-sm sb-hover-lift"
                         style={{ ...cardStyle, borderColor: thm.border + '55' }}>
                         <div className="w-11 h-11 rounded-2xl flex items-center justify-center mb-4" style={{ background: thm.light, color: thm.primary }}>
@@ -2311,7 +2411,11 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                         <h4 className="text-base font-black mt-3 leading-snug" style={{ color: textColor }}>{item.title}</h4>
                         <div
                           className="text-xs opacity-65 font-medium leading-relaxed mt-2 space-y-2"
-                          dangerouslySetInnerHTML={{ __html: item.body_html || item.body || item.summary || '' }}
+                          dangerouslySetInnerHTML={{
+                            __html: DOMPurify.sanitize(item.body_html || item.body || item.summary || '', {
+                              USE_PROFILES: { html: true },
+                            }),
+                          }}
                         />
                       </div>
                     </article>

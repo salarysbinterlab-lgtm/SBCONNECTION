@@ -70,6 +70,9 @@
 - sql/10_rls_policies.sql
 - sql/11_public_session_rpc_FINAL.sql
 - sql/12_ADMIN_BOOTSTRAP_DEV.sql
+- sql/13_PRODUCTION_SECURITY_AND_ASSETS.sql
+- sql/14_LEGACY_RPC_ALIASES_FOR_REACT_APP.sql
+- sql/15_QUOTATION_SUPABASE_SCHEMA.sql
 - sql/90_seed_app_settings.sql
 - sql/91_seed_from_xlsx_FIXED_V3_empid_normalized.sql
 - sql/92_post_seed_fixes.sql

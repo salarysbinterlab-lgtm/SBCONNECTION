@@ -1,5 +1,9 @@
 -- 99_drop_all_dev_only.sql
 -- DEV ONLY. This deletes all SB Connect tables in public schema.
+drop table if exists quotation_files cascade;
+drop table if exists quotation_cost_notes cascade;
+drop table if exists quotation_items cascade;
+drop table if exists quotations cascade;
 drop table if exists it_requests cascade;
 drop table if exists ai_chat_logs cascade;
 drop table if exists direct_messages cascade;

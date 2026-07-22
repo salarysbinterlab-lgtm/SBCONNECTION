@@ -115,7 +115,8 @@ begin
   return jsonb_build_object('status','success','accounts',jsonb_build_array('admin','admin1','admin2','admin3','admin4'));
 end $$;
 
-select public.bootstrap_admin_staff_accounts();
+-- Run `select public.bootstrap_admin_staff_accounts();` manually only when
+-- the organization explicitly wants these predictable first-login accounts.
 
 create or replace function public.admin_add_special_points(
   p_token uuid,

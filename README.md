@@ -12,11 +12,13 @@
 
 ## ใช้งาน
 
-1. แตก ZIP ทับ `D:\Projectsbconnect_app`
-2. แก้ Supabase:
-   `public/app/assets/js/sbConfig.js`
-3. รัน:
-   `RESET_AND_RUN_TOONHUB.bat`
+1. ติดตั้ง dependencies ด้วย `npm install`
+2. ตรวจ config ที่ `public/app/assets/js/sbConfig.js` ซึ่งเป็น source of truth สำหรับไฟล์ที่ deploy
+3. รัน `npm run check`
+4. เปิด dev server ด้วย `npm run dev`
+
+สำหรับทดสอบ UI ด้วยข้อมูลจำลองบนเครื่องเท่านั้น เปิด `http://127.0.0.1:5175/?mock=1`
+โหมดนี้ทำงานเฉพาะ Vite development บน `localhost`/`127.0.0.1` และไม่ถูกเปิดใน production build
 
 หรือ:
 
@@ -36,14 +38,12 @@ http://127.0.0.1:5173/
 
 ## Login
 
-หลังรัน SQL:
-- Admin: `ADMIN / Admin123`
-- User: `emp_id / 1234` แล้วตั้งรหัสใหม่ครั้งแรก
+บัญชีใหม่ต้องถูกสร้างพร้อมรหัสผ่านชั่วคราวโดย Admin หรือ trusted provisioning job และระบบจะบังคับเปลี่ยนรหัสผ่านในการเข้าใช้ครั้งแรก
 
 ## Build GitHub
 
 ```bat
-npm run build
+npm run check
 ```
 
 ใช้ `dist/` deploy
