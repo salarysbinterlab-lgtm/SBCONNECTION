@@ -10,6 +10,8 @@
 //
 // Required Script Properties (Quotation):
 //   FOLDER_QUOTATION_ID
+//   FOLDER_QUOTATION_PDF_ID
+//   FOLDER_QUOTATION_IMAGE_ID
 //   SUPABASE_URL
 //   SUPABASE_SERVICE_ROLE_KEY   (server-side only; never put this value in the web app)
 // Auto-created by setupQuotationSystem() or the first quotation request:
@@ -25,6 +27,8 @@
 
 var DEFAULT_AUDIT_SHEET_ID = "1co7BNHIaMBu6In-CJe3U9wckjNgDJkSLFVKvuAIuuQs";
 var DEFAULT_QUOTATION_FOLDER_ID = "1AtmDwLBJmK9OTgkskEdHBxqMildr6msf";
+var DEFAULT_QUOTATION_PDF_FOLDER_ID = "1wIpoEPrDYCl6kOhPRTQKN4IEF6xObqnk";
+var DEFAULT_QUOTATION_IMAGE_FOLDER_ID = "1WhQuee3dzCX63tvbqwYOIA8t67DeqhSc";
 var QUOTATION_INDEX_PROPERTY = "QUOTATION_INDEX_SHEET_ID";
 var QUOTATION_INDEX_TAB = "QUOTATIONS";
 var QUOTATION_SQL_SYNC_RPC = "sync_quotation_from_drive";
@@ -98,12 +102,26 @@ function auditSheetId() {
   return prop("AUDIT_SHEET_ID", DEFAULT_AUDIT_SHEET_ID);
 }
 
+function quotationFolderId_() {
+  return prop("FOLDER_QUOTATION_ID", DEFAULT_QUOTATION_FOLDER_ID);
+}
+
+function quotationPdfFolderId_() {
+  return prop("FOLDER_QUOTATION_PDF_ID", DEFAULT_QUOTATION_PDF_FOLDER_ID);
+}
+
+function quotationImageFolderId_() {
+  return prop("FOLDER_QUOTATION_IMAGE_ID", DEFAULT_QUOTATION_IMAGE_FOLDER_ID);
+}
+
 function driveFolders() {
   var profileId = prop("FOLDER_PROFILE_ID");
   var newsId = prop("FOLDER_NEWS_ID");
   var missionsId = prop("FOLDER_MISSIONS_ID");
   var rewardId = prop("FOLDER_REWARD_ID");
-  var quotationId = prop("FOLDER_QUOTATION_ID", DEFAULT_QUOTATION_FOLDER_ID);
+  var quotationId = quotationFolderId_();
+  var quotationPdfId = quotationPdfFolderId_();
+  var quotationImageId = quotationImageFolderId_();
   return {
     avatars: profileId,
     profile: profileId,
@@ -113,8 +131,8 @@ function driveFolders() {
     reward: rewardId,
     quotations: quotationId,
     quotation: quotationId,
-    quotation_pdf: quotationId,
-    quotation_images: quotationId,
+    quotation_pdf: quotationPdfId,
+    quotation_images: quotationImageId,
     quotation_attachments: quotationId,
     mission_evidence: prop("FOLDER_MISSION_EVIDENCE_ID", missionsId),
     attachments: prop("FOLDER_ATTACHMENTS_ID", missionsId || newsId || rewardId || profileId)
@@ -171,7 +189,7 @@ function doPost(e) {
 function handleDriveUpload_(body, legacyType, resolvedBucket, quotationUpload) {
   var folders = driveFolders();
   if (!resolvedBucket || !folders[resolvedBucket]) {
-    if (quotationUpload) throw new Error("Invalid quotation bucket or missing FOLDER_QUOTATION_ID");
+    if (quotationUpload) throw new Error("Invalid quotation bucket or missing quotation folder Script Property");
     return jsonOutput({ status: "error", ok: false, message: "Invalid bucket or missing folder Script Property" });
   }
 
@@ -439,6 +457,17 @@ function validateQuotationSession_(sessionToken) {
     throw new Error("SESSION_VALIDATION_FAILED");
   }
   var code = response.getResponseCode();
+  if (code < 200 || code >= 300) {
+    // Compatibility bridge for installations that have not applied migration
+    // 15 yet. The existing RPC still validates the live session and current
+    // app_users row. The service-only RPC takes over after SQL is installed.
+    try {
+      response = quotationSupabaseRequest_("rpc/validate_public_session", "post", { p_token: token });
+      code = response.getResponseCode();
+    } catch (fallbackErr) {
+      throw new Error("SESSION_VALIDATION_FAILED");
+    }
+  }
   if (code < 200 || code >= 300) throw new Error("SESSION_VALIDATION_FAILED");
 
   var result;
@@ -449,8 +478,11 @@ function validateQuotationSession_(sessionToken) {
   }
   if (Array.isArray(result)) result = result.length ? result[0] : {};
   if (result && result.result && typeof result.result === "object") result = result.result;
+  var sessionUser = result && result.user && typeof result.user === "object" ? result.user : {};
+  var sessionEmpId = String(result && result.emp_id || sessionUser.emp_id || sessionUser.empId || "");
+  var sessionRole = String(result && result.role || sessionUser.role || "user").toLowerCase();
   var status = String(result && result.status || "success").toLowerCase();
-  if (status !== "success" || !result || !result.emp_id) {
+  if (status !== "success" || !result || !sessionEmpId) {
     var reason = String(result && (result.message || result.code) || "SESSION_EXPIRED").toUpperCase();
     if (["SESSION_REVOKED", "SESSION_EXPIRED", "SESSION_INVALID", "USER_DISABLED"].indexOf(reason) >= 0) {
       throw new Error(reason);
@@ -459,9 +491,9 @@ function validateQuotationSession_(sessionToken) {
   }
 
   return {
-    emp_id: String(result.emp_id),
-    role: String(result.role || "user").toLowerCase(),
-    expires_at: String(result.expires_at || "")
+    emp_id: sessionEmpId,
+    role: sessionRole,
+    expires_at: String(result.expires_at || result.expiresAt || "")
   };
 }
 
@@ -607,7 +639,7 @@ function quotationSqlEnvelope_(record) {
     gp_percent: Number(record.gp_percent || q.gpPercent || q.gp_percent || 0),
     cost_basis: String(q.costBasis || q.cost_basis || ""),
     report_version: Number(record.report_version || q.reportVersion || q.report_version || 0),
-    drive_folder_id: String(prop("FOLDER_QUOTATION_ID", DEFAULT_QUOTATION_FOLDER_ID)),
+    drive_folder_id: String(quotationFolderId_()),
     pdf_file_id: String(record.pdf_file_id || ""),
     pdf_url: String(record.pdf_view_url || ""),
     pdf_download_url: String(record.pdf_download_url || ""),
@@ -860,8 +892,8 @@ function quotationCreate_(body) {
       quotation.updatedByEmpId = actor.emp_id;
       quotation.updated_by_emp_id = actor.emp_id;
       quotation.createdByName = actor.name;
-      quotation.reportVersion = 1;
-      quotation.report_version = 1;
+      quotation.reportVersion = 0;
+      quotation.report_version = 0;
       quotation.sourceVersion = 1;
       quotation.source_version = 1;
       validateQuotationRequestSize_(quotation);
@@ -885,14 +917,13 @@ function quotationCreate_(body) {
   }
 
   try {
-    artifacts = generateQuotationArtifacts_(quotation, 1);
+    artifacts = emptyQuotationArtifacts_();
     var concurrentIdempotent = false;
     var finalizeLock = LockService.getScriptLock();
     finalizeLock.waitLock(30000);
     try {
       var recordCreatedMeanwhile = findQuotationRecordByClientRequestId_(clientRequestId);
       if (recordCreatedMeanwhile) {
-        trashArtifacts_(artifacts);
         artifacts = artifactsFromRecord_(recordCreatedMeanwhile);
         quotation = parseQuotationPayload_(recordCreatedMeanwhile.payload_json);
         attachArtifactsToQuotation_(quotation, artifacts);
@@ -904,7 +935,7 @@ function quotationCreate_(body) {
           throw new Error("QUOTATION_CREATE_RESERVATION_LOST");
         }
         attachArtifactsToQuotation_(quotation, artifacts);
-        appendQuotationRecord_(quotation, artifacts, quotation.updatedAt);
+        appendQuotationRecord_(quotation, artifacts, quotation.updatedAt, "");
         recordCommitted = true;
         scriptProps().deleteProperty(reservationKey);
       }
@@ -917,14 +948,13 @@ function quotationCreate_(body) {
       return quotationSuccessResponse_("quotation_create", quotation, artifacts, true, concurrentSync);
     }
     var createSync = syncQuotationRecordToSupabaseSafe_(quotation.quotationId, quotationSessionToken_(body));
-    writeQuotationAuditSafe_("quotation_create", "success", body, quotation, "Created draft and initial report files");
+    writeQuotationAuditSafe_("quotation_create", "success", body, quotation, "Created draft without generating report files");
     return quotationSuccessResponse_("quotation_create", quotation, artifacts, false, createSync);
   } catch (err) {
     if (recordCommitted) {
       writeQuotationAuditSafe_("quotation_create", "success", body, quotation, "Created draft; reservation cleanup deferred");
       return quotationSuccessResponse_("quotation_create", quotation, artifacts, false);
     }
-    if (artifacts) trashArtifacts_(artifacts);
     clearCreateReservationSafely_(reservationKey, quotation && quotation.quotationId);
     throw err;
   }
@@ -957,7 +987,7 @@ function quotationSave_(body, reportOnly) {
     if (merged.uploaded_files) delete merged.uploaded_files;
     quotation = normalizeAndCalculateQuotation_(merged);
     now = nowIso_();
-    version = nonNegativeInteger_(existingRecord.report_version, "report_version", 0) + 1;
+    version = nonNegativeInteger_(existingRecord.report_version, "report_version", 0) + (reportOnly ? 1 : 0);
     snapshotToken = quotationRecordSnapshotToken_(existingRecord);
 
     quotation.quotationId = String(existingRecord.quotation_id);
@@ -985,6 +1015,25 @@ function quotationSave_(body, reportOnly) {
     snapshotLock.releaseLock();
   }
 
+  if (!reportOnly) {
+    var draftArtifacts = artifactsFromRecord_(existingRecord);
+    var draftLock = LockService.getScriptLock();
+    draftLock.waitLock(30000);
+    try {
+      var currentDraftRecord = findQuotationRecord_(existingRecord.quotation_id);
+      if (!currentDraftRecord || quotationRecordSnapshotToken_(currentDraftRecord) !== snapshotToken) {
+        throw new Error("QUOTATION_CONFLICT_RELOAD_AND_RETRY");
+      }
+      attachArtifactsToQuotation_(quotation, draftArtifacts);
+      updateQuotationRecord_(currentDraftRecord._rowNumber, quotation, draftArtifacts, now);
+    } finally {
+      draftLock.releaseLock();
+    }
+    var draftSync = syncQuotationRecordToSupabaseSafe_(quotation.quotationId, quotationSessionToken_(body));
+    writeQuotationAuditSafe_("quotation_save", "success", body, quotation, "Saved draft without regenerating report files");
+    return quotationSuccessResponse_("quotation_save", quotation, draftArtifacts, false, draftSync);
+  }
+
   try {
     newArtifacts = generateQuotationArtifacts_(quotation, version);
     var commitLock = LockService.getScriptLock();
@@ -995,7 +1044,7 @@ function quotationSave_(body, reportOnly) {
         throw new Error("QUOTATION_CONFLICT_RELOAD_AND_RETRY");
       }
       attachArtifactsToQuotation_(quotation, newArtifacts);
-      updateQuotationRecord_(currentRecord._rowNumber, quotation, newArtifacts, now);
+      updateQuotationRecord_(currentRecord._rowNumber, quotation, newArtifacts, now, now);
       saveCommitted = true;
     } finally {
       commitLock.releaseLock();
@@ -1006,12 +1055,12 @@ function quotationSave_(body, reportOnly) {
     trashFileSafely_(existingRecord.pdf_file_id, newArtifacts.pdf.fileId);
     trashFileSafely_(existingRecord.xlsx_file_id, newArtifacts.xlsx.fileId);
     var saveSync = syncQuotationRecordToSupabaseSafe_(quotation.quotationId, quotationSessionToken_(body));
-    writeQuotationAuditSafe_(reportOnly ? "quotation_report" : "quotation_save", "success", body, quotation, "Regenerated PDF and XLSX report files");
-    return quotationSuccessResponse_(reportOnly ? "quotation_report" : "quotation_save", quotation, newArtifacts, false, saveSync);
+    writeQuotationAuditSafe_("quotation_report", "success", body, quotation, "Regenerated PDF and XLSX report files");
+    return quotationSuccessResponse_("quotation_report", quotation, newArtifacts, false, saveSync);
   } catch (err) {
     if (saveCommitted) {
-      writeQuotationAuditSafe_(reportOnly ? "quotation_report" : "quotation_save", "success", body, quotation, "Saved reports; post-commit cleanup deferred");
-      return quotationSuccessResponse_(reportOnly ? "quotation_report" : "quotation_save", quotation, newArtifacts);
+      writeQuotationAuditSafe_("quotation_report", "success", body, quotation, "Saved reports; post-commit cleanup deferred");
+      return quotationSuccessResponse_("quotation_report", quotation, newArtifacts);
     }
     if (newArtifacts) trashArtifacts_(newArtifacts);
     throw err;
@@ -1403,7 +1452,8 @@ function normalizeQuotationStatus_(status) {
 }
 
 function generateQuotationArtifacts_(quotation, version) {
-  var folder = DriveApp.getFolderById(prop("FOLDER_QUOTATION_ID", DEFAULT_QUOTATION_FOLDER_ID));
+  var folder = DriveApp.getFolderById(quotationFolderId_());
+  var pdfFolder = DriveApp.getFolderById(quotationPdfFolderId_());
   var tempSpreadsheet = null;
   var pdfFile = null;
   var xlsxFile = null;
@@ -1425,7 +1475,7 @@ function generateQuotationArtifacts_(quotation, version) {
     var customerSheet = buildCustomerQuotationSheet_(tempSpreadsheet, quotation);
     SpreadsheetApp.flush();
     var pdfBlob = exportSpreadsheetBlob_(tempSpreadsheet, "pdf", "application/pdf", baseName + ".pdf", customerSheet);
-    pdfFile = folder.createFile(pdfBlob);
+    pdfFile = pdfFolder.createFile(pdfBlob);
     applyCustomerQuotationSharing_(pdfFile);
 
     return {
@@ -1725,10 +1775,10 @@ function insertQuotationProductImage_(sheet, fileId, row) {
 }
 
 function fileIsInQuotationFolder_(file) {
-  var expected = prop("FOLDER_QUOTATION_ID", DEFAULT_QUOTATION_FOLDER_ID);
+  var managedFolderIds = [quotationFolderId_(), quotationPdfFolderId_(), quotationImageFolderId_()];
   var parents = file.getParents();
   while (parents.hasNext()) {
-    if (parents.next().getId() === expected) return true;
+    if (managedFolderIds.indexOf(parents.next().getId()) >= 0) return true;
   }
   return false;
 }
@@ -1796,8 +1846,14 @@ function quotationArtifactFileRef_(quotation, artifact, format) {
   };
 }
 
+function emptyQuotationArtifacts_() {
+  return { pdf: {}, xlsx: {}, files: [] };
+}
+
 function attachArtifactsToQuotation_(quotation, artifacts) {
-  artifacts = artifacts || { pdf: {}, xlsx: {} };
+  artifacts = artifacts || emptyQuotationArtifacts_();
+  artifacts.pdf = artifacts.pdf || {};
+  artifacts.xlsx = artifacts.xlsx || {};
   quotation.artifacts = artifacts;
   quotation.pdfFileId = artifacts.pdf && artifacts.pdf.fileId || "";
   quotation.pdf_file_id = quotation.pdfFileId;
@@ -1822,6 +1878,7 @@ function attachArtifactsToQuotation_(quotation, artifacts) {
 }
 
 function quotationSuccessResponse_(action, quotation, artifacts, idempotent, sync) {
+  artifacts = artifacts || emptyQuotationArtifacts_();
   var response = {
     status: "success",
     ok: true,
@@ -1850,7 +1907,7 @@ function getQuotationIndexSpreadsheet_() {
     }
   }
   if (!ss) {
-    var folder = DriveApp.getFolderById(prop("FOLDER_QUOTATION_ID", DEFAULT_QUOTATION_FOLDER_ID));
+    var folder = DriveApp.getFolderById(quotationFolderId_());
     ss = SpreadsheetApp.create("SBConnect_Quotation_Index");
     DriveApp.getFileById(ss.getId()).moveTo(folder);
     scriptProps().setProperty(QUOTATION_INDEX_PROPERTY, ss.getId());
@@ -1926,26 +1983,28 @@ function findQuotationRecordByClientRequestId_(clientRequestId) {
   return null;
 }
 
-function appendQuotationRecord_(q, artifacts, now) {
+function appendQuotationRecord_(q, artifacts, now, lastReportAt) {
   var sheet = quotationIndexSheet_();
   var headers = quotationIndexHeaders_(sheet);
-  var obj = quotationRecordObject_(q, artifacts, now);
+  var obj = quotationRecordObject_(q, artifacts, now, lastReportAt);
   sheet.getRange(sheet.getLastRow() + 1, 1, 1, headers.length).setValues([headers.map(function(header) {
     return indexCellValue_(header, obj[header]);
   })]);
 }
 
-function updateQuotationRecord_(rowNumber, q, artifacts, now) {
+function updateQuotationRecord_(rowNumber, q, artifacts, now, lastReportAt) {
   var sheet = quotationIndexSheet_();
   var headers = quotationIndexHeaders_(sheet);
-  var obj = quotationRecordObject_(q, artifacts, now);
+  var obj = quotationRecordObject_(q, artifacts, now, lastReportAt);
   var previous = sheet.getRange(rowNumber, 1, 1, headers.length).getValues()[0];
   var attemptsColumn = headers.indexOf("sql_sync_attempts");
   var syncVersionColumn = headers.indexOf("sql_sync_version");
   var syncedAtColumn = headers.indexOf("sql_synced_at");
+  var lastReportAtColumn = headers.indexOf("last_report_at");
   if (attemptsColumn >= 0) obj.sql_sync_attempts = Number(previous[attemptsColumn] || 0);
   if (syncVersionColumn >= 0) obj.sql_sync_version = Number(previous[syncVersionColumn] || 0);
   if (syncedAtColumn >= 0) obj.sql_synced_at = String(previous[syncedAtColumn] || "");
+  if (lastReportAt === undefined && lastReportAtColumn >= 0) obj.last_report_at = String(previous[lastReportAtColumn] || "");
   sheet.getRange(rowNumber, 1, 1, headers.length).setValues([headers.map(function(header) {
     return indexCellValue_(header, obj[header]);
   })]);
@@ -1963,7 +2022,10 @@ function updateQuotationIndexFields_(rowNumber, patch) {
   range.setValues([row]);
 }
 
-function quotationRecordObject_(q, artifacts, now) {
+function quotationRecordObject_(q, artifacts, now, lastReportAt) {
+  artifacts = artifacts || emptyQuotationArtifacts_();
+  artifacts.pdf = artifacts.pdf || {};
+  artifacts.xlsx = artifacts.xlsx || {};
   var payloadJson = JSON.stringify(q);
   assertJsonSize_(payloadJson);
   return {
@@ -1996,7 +2058,7 @@ function quotationRecordObject_(q, artifacts, now) {
     xlsx_view_url: artifacts.xlsx.viewUrl,
     xlsx_download_url: artifacts.xlsx.downloadUrl,
     report_version: q.reportVersion,
-    last_report_at: now,
+    last_report_at: lastReportAt === undefined ? now : lastReportAt,
     source_version: Number(q.sourceVersion || q.source_version || 1),
     sql_sync_status: "PENDING",
     sql_sync_version: 0,
@@ -2228,7 +2290,9 @@ function setupQuotationSystem() {
   var result = {
     status: "error",
     ok: false,
-    folderId: prop("FOLDER_QUOTATION_ID", DEFAULT_QUOTATION_FOLDER_ID),
+    folderId: quotationFolderId_(),
+    pdfFolderId: quotationPdfFolderId_(),
+    imageFolderId: quotationImageFolderId_(),
     indexSheetId: "",
     message: ""
   };
@@ -2236,13 +2300,17 @@ function setupQuotationSystem() {
   lock.waitLock(30000);
   try {
     var folder = DriveApp.getFolderById(result.folderId);
+    var pdfFolder = DriveApp.getFolderById(result.pdfFolderId);
+    var imageFolder = DriveApp.getFolderById(result.imageFolderId);
     folder.getName();
+    pdfFolder.getName();
+    imageFolder.getName();
     var ss = getQuotationIndexSpreadsheet_();
     ensureQuotationIndexSheet_(ss);
     result.status = "success";
     result.ok = true;
     result.indexSheetId = ss.getId();
-    result.message = "Quotation folder and index are ready";
+    result.message = "Quotation data, PDF, image folders, and index are ready";
   } catch (err) {
     result.message = safeErrorMessage_(err);
   } finally {
@@ -2606,6 +2674,8 @@ function doGet() {
     buckets: Object.keys(folders).filter(function(key) { return !!folders[key]; }),
     logTypes: ["log", "log_batch"],
     quotationFolderConfigured: !!folders.quotation,
+    quotationPdfFolderConfigured: !!folders.quotation_pdf,
+    quotationImageFolderConfigured: !!folders.quotation_images,
     quotationIndexConfigured: !!prop(QUOTATION_INDEX_PROPERTY),
     quotationSessionValidationConfigured: !!prop("SUPABASE_URL") && !!prop("SUPABASE_SERVICE_ROLE_KEY"),
     quotationSqlSyncConfigured: !!prop("SUPABASE_URL") && !!prop("SUPABASE_SERVICE_ROLE_KEY"),

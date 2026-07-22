@@ -856,6 +856,41 @@ export function isQuotationMockMode(): boolean {
   return transportSettings().mock;
 }
 
+export async function checkQuotationService(): Promise<void> {
+  const settings = transportSettings();
+  if (settings.mock) return;
+
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(settings.endpoint, { method: 'GET', redirect: 'follow', signal: controller.signal });
+    const payload = asObject(await response.json());
+    const actions = Array.isArray(payload.quotationActions) ? payload.quotationActions.map((value) => text(value)) : [];
+    const required = ['quotation_create', 'quotation_save', 'quotation_list', 'quotation_get', 'quotation_report'];
+    if (!response.ok || !required.every((action) => actions.includes(action))) {
+      throw new Error('Apps Script ที่ Deploy อยู่ยังไม่รองรับ Quotation กรุณาวางไฟล์ .gs เวอร์ชันล่าสุด ตั้งค่า Folder ID แล้ว Deploy เป็น New version');
+    }
+    if (payload.quotationFolderConfigured !== true
+      || payload.quotationPdfFolderConfigured !== true
+      || payload.quotationImageFolderConfigured !== true) {
+      throw new Error('ตั้งค่าโฟลเดอร์ Quotation, PDF หรือ Image ใน Apps Script ยังไม่ครบ กรุณารัน setupQuotationSystem()');
+    }
+    if (payload.quotationSessionValidationConfigured !== true) {
+      throw new Error('Apps Script ยังไม่มี SUPABASE_URL หรือ SUPABASE_SERVICE_ROLE_KEY สำหรับตรวจ session');
+    }
+  } catch (error) {
+    if (isObject(error) && error.name === 'AbortError') {
+      throw new Error('ตรวจสอบ Apps Script ไม่สำเร็จภายใน 15 วินาที กรุณาตรวจ URL และ deployment');
+    }
+    if (error instanceof SyntaxError) {
+      throw new Error('Apps Script endpoint ตอบกลับไม่ใช่ JSON กรุณาตรวจ deployment URL');
+    }
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
+}
+
 function errorMessage(value: unknown, fallback: string): string {
   const data = asObject(value);
   return text(firstDefined(data.message, data.error, data.details), fallback);

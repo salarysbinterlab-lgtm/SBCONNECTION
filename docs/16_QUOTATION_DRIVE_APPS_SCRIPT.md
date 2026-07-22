@@ -2,9 +2,11 @@
 
 ระบบนี้ใช้ Supabase SQL เก็บข้อมูลใบเสนอราคาแบบ normalized เพื่อค้นหา ตรวจสอบ และทำรายงาน ส่วน Google Drive เป็นแหล่งเก็บไฟล์จริง ได้แก่ รูป ไฟล์แนบ PDF และ XLSX จึงใช้พื้นที่ฐานข้อมูล Supabase เพิ่มเล็กน้อยตามจำนวนข้อความ/รายการ แต่ไม่ใช้ Supabase Storage สำหรับไฟล์ Quotation
 
-โฟลเดอร์ปลายทาง:
+โฟลเดอร์ปลายทางแยกตามชนิดไฟล์:
 
-`1AtmDwLBJmK9OTgkskEdHBxqMildr6msf`
+- ข้อมูลดัชนี, XLSX และไฟล์แนบ: `1AtmDwLBJmK9OTgkskEdHBxqMildr6msf`
+- PDF ใบเสนอราคา: `1wIpoEPrDYCl6kOhPRTQKN4IEF6xObqnk`
+- รูปสินค้า Quotation: `1WhQuee3dzCX63tvbqwYOIA8t67DeqhSc`
 
 ## สิ่งที่ระบบสร้าง
 
@@ -49,6 +51,8 @@ order by table_name;
 | Property | ค่า/คำอธิบาย |
 |---|---|
 | `FOLDER_QUOTATION_ID` | `1AtmDwLBJmK9OTgkskEdHBxqMildr6msf` |
+| `FOLDER_QUOTATION_PDF_ID` | `1wIpoEPrDYCl6kOhPRTQKN4IEF6xObqnk` |
+| `FOLDER_QUOTATION_IMAGE_ID` | `1WhQuee3dzCX63tvbqwYOIA8t67DeqhSc` |
 | `SUPABASE_URL` | URL ของ Supabase โปรเจกต์เดียวกับ SB Connect |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key สำหรับตรวจ session ฝั่ง server เท่านั้น |
 
@@ -72,6 +76,8 @@ order by table_name;
 | `QUOTATION_INTERNAL_SHARE_MODE=ANYONE_WITH_LINK` | เปิด XLSX วิเคราะห์ภายในให้ผู้มีลิงก์ดูได้ — ไม่แนะนำ |
 | `QUOTATION_UPLOAD_SHARE_MODE=ANYONE_WITH_LINK` | เปิดรูป/ไฟล์แนบให้ผู้มีลิงก์ดูได้ — ใช้เมื่อจำเป็น |
 | `QUOTATION_SQL_SYNC_ENABLED=FALSE` | ปิด SQL mirror ชั่วคราวเฉพาะตอนซ่อมระบบ — ค่าเริ่มต้นเปิดใช้งาน |
+
+หากยังไม่ได้รัน `sql/15_QUOTATION_SUPABASE_SCHEMA.sql` ให้ตั้ง `QUOTATION_SQL_SYNC_ENABLED=FALSE` ชั่วคราว ระบบ Drive ยังสร้าง/บันทึกใบเสนอราคาได้โดยตรวจ session ผ่าน RPC หลักเดิม และเปิด SQL sync กลับเป็น `TRUE` หลังติดตั้ง migration 15 แล้ว
 
 ค่าเริ่มต้นคือไฟล์ private และใช้สิทธิ์ของโฟลเดอร์ Drive แนะนำให้แชร์โฟลเดอร์กับ Google Group หรือบัญชีของบริษัทแทนการเปิด `ANYONE_WITH_LINK`
 
@@ -104,24 +110,27 @@ Quotation ใช้ `sessionToken` ของผู้ใช้ในการย
 เปิด URL `/exec` ด้วย GET แล้วตรวจค่าต่อไปนี้:
 
 - `quotationFolderConfigured: true`
+- `quotationPdfFolderConfigured: true`
+- `quotationImageFolderConfigured: true`
 - `quotationIndexConfigured: true`
 - `quotationSessionValidationConfigured: true`
 - `quotationSqlSyncConfigured: true`
-- `quotationSqlSyncEnabled: true`
+- `quotationSqlSyncEnabled: false` ระหว่างที่ยังไม่ลง SQL 15 และเปลี่ยนเป็น `true` หลังติดตั้งแล้ว
 - มี `quotation_create`, `quotation_save`, `quotation_list`, `quotation_get`, `quotation_report`
 
 จากนั้นทดสอบผ่าน SB Connect:
 
 1. Login ด้วยผู้ใช้จริง
 2. Services > Quotation
-3. ระบบต้องออกเลขใหม่และสร้าง PDF/XLSX ใน Drive
-4. กรอกลูกค้าและอย่างน้อยหนึ่งรายการ แล้วกดบันทึก
-5. กดสร้างรายงาน แล้วเปิด PDF และ Excel จากปุ่มในหน้าเดียวกัน
-6. ตรวจ PDF ว่าไม่มี Unit Cost, SB Cost, Total Cost, Gross Profit หรือ GP
-7. ตรวจ XLSX ว่ามีสูตร Subtotal, VAT, Grand Total, Total Cost, Gross Profit และ GP%
-8. ปิดแล้วเปิดใบเดิมจากหน้ารายงาน ข้อมูล รูป ไฟล์แนบ และลิงก์ต้องอยู่ครบ
-9. ทดสอบผู้ใช้คนอื่นว่ามองไม่เห็น/แก้ใบของเจ้าของเดิม เว้นแต่มี role ผู้ดูแล
-10. ตรวจ Supabase Table Editor ว่า `quotations` และตารางลูกมีข้อมูลตรงกับ Google Sheet
+3. ระบบต้องออกเลขใหม่ แต่ยังไม่สร้าง PDF/XLSX จนกว่าจะสั่งสร้างรายงาน
+4. กรอกลูกค้า เพิ่มสินค้า อัปโหลดรูป และเพิ่ม Cost Notes แล้วกด `บันทึกร่าง` ต้องไม่สร้างไฟล์รายงานใหม่
+5. กด `สร้างรายงาน` แล้วเปิด PDF และ Excel จากปุ่มในหน้าเดียวกัน
+6. ตรวจว่า PDF อยู่ในโฟลเดอร์ PDF และรูปสินค้าอยู่ในโฟลเดอร์ Image ตาม ID ด้านบน
+7. ตรวจ PDF ว่าไม่มี Unit Cost, SB Cost, Total Cost, Gross Profit หรือ GP
+8. ตรวจ XLSX ว่ามีสูตร Subtotal, VAT, Grand Total, Total Cost, Gross Profit และ GP%
+9. ปิดแล้วเปิดใบเดิมจากหน้ารายงาน ข้อมูล รูป ไฟล์แนบ และลิงก์ต้องอยู่ครบ
+10. ทดสอบผู้ใช้คนอื่นว่ามองไม่เห็น/แก้ใบของเจ้าของเดิม เว้นแต่มี role ผู้ดูแล
+11. หลังติดตั้ง SQL ตรวจ Supabase Table Editor ว่า `quotations` และตารางลูกมีข้อมูลตรงกับ Google Sheet
 
 ## สูตรหลัก
 

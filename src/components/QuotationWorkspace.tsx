@@ -145,6 +145,7 @@ type QuotationListItem = {
 };
 
 type QuotationApi = {
+  checkQuotationService: () => Promise<void>;
   createQuotation: (initial?: Partial<QuotationRecord>) => Promise<unknown>;
   saveQuotation: (record: QuotationRecord) => Promise<unknown>;
   listQuotations: (search?: string) => Promise<unknown>;
@@ -758,9 +759,10 @@ export default function QuotationWorkspace({
       createdByName: userDisplayName(user),
     };
 
+    const serviceReady = quotationApi.checkQuotationService();
     Promise.allSettled([
-      getInitialDraft(`${currentUserKey}:${bootstrapVersion}`, initial),
-      quotationApi.listQuotations(''),
+      serviceReady.then(() => getInitialDraft(`${currentUserKey}:${bootstrapVersion}`, initial)),
+      serviceReady.then(() => quotationApi.listQuotations('')),
     ])
       .then(([createdResult, listResult]) => {
         if (!active) return;
@@ -1787,7 +1789,7 @@ export default function QuotationWorkspace({
                   </div>
                 </section>
 
-                <SectionCard icon={<Sparkles size={20} />} title="PDF & Excel" description="บันทึกข้อมูลล่าสุด แล้วสร้างรายงานใหม่ไว้ในโฟลเดอร์ Quotation">
+                <SectionCard icon={<Sparkles size={20} />} title="PDF & Excel" description="สร้างรายงานจากข้อมูลที่บันทึกล่าสุด โดยแยก PDF ไปยังโฟลเดอร์สำหรับลูกค้า">
                   <button
                     type="button"
                     onClick={() => void generateReports()}
@@ -1803,7 +1805,7 @@ export default function QuotationWorkspace({
                   </div>
                   <div className="mt-3 flex items-start gap-2 rounded-xl bg-blue-50 px-3 py-2.5 text-xs leading-5 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
                     <ShieldCheck className="mt-0.5 shrink-0" size={15} />
-                    ไฟล์รายงานและรูปประกอบจัดเก็บรวมกันบน Google Drive ของระบบ
+                    PDF, ไฟล์วิเคราะห์ภายใน และรูปประกอบถูกแยกเก็บตามโฟลเดอร์ที่กำหนดบน Google Drive
                   </div>
                 </SectionCard>
 
