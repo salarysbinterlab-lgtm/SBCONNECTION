@@ -5,6 +5,18 @@ const USER_KEY = 'sb_current_user';
 const TMP_PASS_KEY = 'sb_tmp_login_password';
 
 export function getConfig() {
+  const localMockMode = import.meta.env.DEV
+    && typeof window !== 'undefined'
+    && ['127.0.0.1', 'localhost'].includes(window.location.hostname)
+    && new URLSearchParams(window.location.search).get('mock') === '1';
+  if (localMockMode) {
+    return {
+      supabaseUrl: 'PASTE_SUPABASE_URL_HERE',
+      supabaseAnonKey: 'PASTE_SUPABASE_ANON_KEY_HERE',
+      driveUploadEndpoint: 'PASTE_APPS_SCRIPT_WEB_APP_URL_HERE',
+      driveUploadToken: 'CHANGE_THIS_TOKEN_TO_MATCH_APPS_SCRIPT',
+    };
+  }
   if (typeof window !== 'undefined' && window.SB_CONNECT_CONFIG) {
     return window.SB_CONNECT_CONFIG;
   }
@@ -46,6 +58,12 @@ export function clearTempPassword() {
   sessionStorage.removeItem(TMP_PASS_KEY);
 }
 
+export function clearSession() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+  clearTempPassword();
+}
+
 export function setSession(token: string, user: any, tempPassword = '') {
   const normalizedUser = {
     ...(user || {}),
@@ -64,6 +82,62 @@ export function setSession(token: string, user: any, tempPassword = '') {
   if (tempPassword) {
     sessionStorage.setItem(TMP_PASS_KEY, tempPassword);
   }
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('ไม่สามารถอ่านไฟล์ที่เลือกได้'));
+    reader.readAsDataURL(file);
+  });
+}
+
+export async function uploadDriveFile(
+  file: File,
+  bucket: 'profile' | 'news' | 'missions' | 'rewards' | 'mission_evidence' | 'attachments',
+  meta: Record<string, unknown> = {},
+) {
+  const cfg = getConfig();
+  const endpoint = String(cfg.driveUploadEndpoint || '');
+  const sessionToken = getToken();
+
+  if (!endpoint || endpoint.includes('PASTE_')) {
+    throw new Error('ยังไม่ได้ตั้งค่า Apps Script upload endpoint');
+  }
+  if (!sessionToken) throw new Error('SESSION_EXPIRED');
+  if (!file.type.startsWith('image/') && file.type !== 'application/pdf' && bucket !== 'attachments') {
+    throw new Error('ประเภทไฟล์นี้ไม่ได้รับอนุญาต');
+  }
+  if (file.size > 8 * 1024 * 1024) {
+    throw new Error('ไฟล์มีขนาดเกิน 8 MB');
+  }
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({
+      type: 'upload',
+      sessionToken,
+      bucket,
+      fileName: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      base64: await fileToDataUrl(file),
+      meta,
+    }),
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data || data.status === 'error' || data.ok === false) {
+    throw new Error(data?.message || 'อัปโหลดไฟล์ไม่สำเร็จ');
+  }
+  return data as {
+    fileId: string;
+    fileName: string;
+    mimeType: string;
+    directUrl: string;
+    viewUrl: string;
+    downloadUrl: string;
+  };
 }
 
 function redactForLog(value: any): any {
@@ -142,6 +216,8 @@ const MOCK_DEPTS_KEY = 'mock_db_depts';
 const MOCK_CALENDAR_KEY = 'mock_db_calendar';
 const MOCK_RULES_KEY = 'mock_db_rules';
 const MOCK_WELCOME_KEY = 'mock_db_welcome_config';
+const MOCK_REDEMPTIONS_KEY = 'mock_db_redemptions';
+const MOCK_SUBMISSIONS_KEY = 'mock_db_mission_submissions';
 
 function localDateKey(date = new Date()) {
   const y = date.getFullYear();
@@ -169,7 +245,7 @@ function initMockDB() {
   if (!localStorage.getItem(MOCK_MISSIONS_KEY)) {
     localStorage.setItem(MOCK_MISSIONS_KEY, JSON.stringify([
       { id: 101, title: 'ตอบแบบสำรวจความสุขพนักงาน', description: 'ร่วมตอบแบบสำรวจสั้นๆ 5 นาทีเพื่อนำไปพัฒนาคุณภาพชีวิตการทำงานในสำนักงาน', points: 80, is_active: true, created_at: '2026-07-14T12:00:00Z' },
-      { id: 102, title: 'ทำความสะอาดโต๊ะทำงาน (5S)', description: 'ถ่ายภาพโต๊ะทำงานที่จัดระเบียบเรียบร้อยส่งเข้ามาในระบบเพื่อรับคะแนน', points: 150, is_active: true, created_at: '2026-07-12T08:00:00Z' }
+      { id: 102, title: 'ทำความสะอาดโต๊ะทำงาน (5S)', description: 'ถ่ายภาพโต๊ะทำงานที่จัดระเบียบเรียบร้อยส่งเข้ามาในระบบเพื่อรับคะแนน', points: 150, requires_evidence: true, requires_approval: true, is_active: true, created_at: '2026-07-12T08:00:00Z' }
     ]));
   }
   if (!localStorage.getItem(MOCK_REWARDS_KEY)) {
@@ -217,6 +293,8 @@ function initMockDB() {
       updated_at: new Date().toISOString(),
     }));
   }
+  if (!localStorage.getItem(MOCK_REDEMPTIONS_KEY)) localStorage.setItem(MOCK_REDEMPTIONS_KEY, '[]');
+  if (!localStorage.getItem(MOCK_SUBMISSIONS_KEY)) localStorage.setItem(MOCK_SUBMISSIONS_KEY, '[]');
 }
 
 function handleMockRpc(fn: string, args: Record<string, any> = {}): any {
@@ -340,10 +418,11 @@ function handleMockRpc(fn: string, args: Record<string, any> = {}): any {
 
     case 'list_missions': {
       const missions = getList(MOCK_MISSIONS_KEY);
-      const logs = getList(MOCK_LOGS_KEY).filter((l: any) => l.emp_id === empId && l.source_type === 'MISSION');
+      const submissions = getList(MOCK_SUBMISSIONS_KEY).filter((item: any) => item.emp_id === empId);
       return missions.map((m: any) => ({
         ...m,
-        is_done: logs.some((l: any) => String(l.description).includes(`ส่งภารกิจ ID: ${m.id}`))
+        submission_status: submissions.find((item: any) => String(item.mission_id) === String(m.id))?.status || '',
+        is_done: submissions.some((item: any) => String(item.mission_id) === String(m.id) && item.status === 'Completed')
       }));
     }
 
@@ -353,29 +432,50 @@ function handleMockRpc(fn: string, args: Record<string, any> = {}): any {
       const missionItem = missionsList.find((m: any) => m.id === Number(missionId));
       if (!missionItem) throw new Error('ไม่พบภารกิจ');
 
-      const logs = getList(MOCK_LOGS_KEY);
-      const alreadyDone = logs.some((l: any) => l.emp_id === empId && l.source_type === 'MISSION' && String(l.description).includes(`ส่งภารกิจ ID: ${missionId}`));
+      const submissions = getList(MOCK_SUBMISSIONS_KEY);
+      const alreadyDone = submissions.some((item: any) => item.emp_id === empId && String(item.mission_id) === String(missionId) && ['Pending', 'Completed'].includes(item.status));
 
       if (alreadyDone) throw new Error('คุณทำภารกิจนี้ไปแล้ว');
 
-      currentUserObj.points += missionItem.points;
-      saveList(MOCK_USERS_KEY, users);
+      if (missionItem.requires_evidence && !args.p_evidence_url) throw new Error('กรุณาแนบหลักฐานก่อนส่งภารกิจ');
+      const pending = Boolean(missionItem.requires_approval);
+      submissions.unshift({
+        id: Date.now(),
+        submitted_at: new Date().toISOString(),
+        emp_id: empId,
+        employee_name: currentUserObj.full_name,
+        mission_id: missionId,
+        mission_title: missionItem.title,
+        points: missionItem.points,
+        evidence_url: args.p_evidence_url || '',
+        status: pending ? 'Pending' : 'Completed',
+      });
+      saveList(MOCK_SUBMISSIONS_KEY, submissions);
 
+      if (!pending) {
+        currentUserObj.points += missionItem.points;
+        saveList(MOCK_USERS_KEY, users);
+      }
+
+      const logs = getList(MOCK_LOGS_KEY);
       logs.unshift({
         emp_id: empId,
         title: `ทำภารกิจ: ${missionItem.title}`,
-        amount: missionItem.points,
+        amount: pending ? 0 : missionItem.points,
         created_at: new Date().toISOString(),
         source_type: 'MISSION',
-        description: `ส่งภารกิจ ID: ${missionId} ได้รับ ${missionItem.points} คะแนน`
+        description: pending ? `ส่งภารกิจ ID: ${missionId} รอตรวจสอบ` : `ส่งภารกิจ ID: ${missionId} ได้รับ ${missionItem.points} คะแนน`
       });
       saveList(MOCK_LOGS_KEY, logs);
 
-      return { status: 'success', message: 'ส่งภารกิจเสร็จเรียบร้อย! ได้รับคะแนนสะสม' };
+      return { status: 'success', message: pending ? 'ส่งภารกิจแล้ว กรุณารอผู้ดูแลอนุมัติ' : 'ส่งภารกิจเสร็จเรียบร้อย! ได้รับคะแนนสะสม' };
     }
 
     case 'list_rewards':
       return getList(MOCK_REWARDS_KEY);
+
+    case 'list_my_redemptions':
+      return getList(MOCK_REDEMPTIONS_KEY).filter((item: any) => item.emp_id === empId);
 
     case 'redeem_reward': {
       const rewardId = args.p_reward_id;
@@ -403,6 +503,20 @@ function handleMockRpc(fn: string, args: Record<string, any> = {}): any {
         description: `แลกของรางวัล ID: ${rewardId} หัก ${rewardItem.points_required} คะแนน`
       });
       saveList(MOCK_LOGS_KEY, logs);
+
+      const redemptions = getList(MOCK_REDEMPTIONS_KEY);
+      redemptions.unshift({
+        id: `RDM-${Date.now()}`,
+        redemption_id: `RDM-${Date.now()}`,
+        emp_id: empId,
+        employee_name: currentUserObj.full_name,
+        reward_id: rewardId,
+        reward_name: rewardItem.name,
+        points_spent: rewardItem.points_required,
+        status: 'Pending',
+        redeemed_at: new Date().toISOString(),
+      });
+      saveList(MOCK_REDEMPTIONS_KEY, redemptions);
 
       return { status: 'success', message: 'แลกของรางวัลสำเร็จ!' };
     }
@@ -444,6 +558,48 @@ function handleMockRpc(fn: string, args: Record<string, any> = {}): any {
 
     case 'admin_list_rewards':
       return getList(MOCK_REWARDS_KEY);
+
+    case 'admin_list_mission_submissions':
+      return getList(MOCK_SUBMISSIONS_KEY);
+
+    case 'admin_review_mission_submission': {
+      const submissions = getList(MOCK_SUBMISSIONS_KEY);
+      const submission = submissions.find((item: any) => Number(item.id) === Number(args.p_submission_id));
+      if (!submission) throw new Error('ไม่พบรายการส่งภารกิจ');
+      const wasPending = submission.status === 'Pending';
+      submission.status = args.p_decision === 'Approved' ? 'Completed' : 'Rejected';
+      submission.reviewed_at = new Date().toISOString();
+      submission.review_note = args.p_note || '';
+      if (wasPending && submission.status === 'Completed') {
+        const target = users.find((item: any) => item.emp_id === submission.emp_id);
+        if (target) target.points += Number(submission.points || 0);
+        saveList(MOCK_USERS_KEY, users);
+      }
+      saveList(MOCK_SUBMISSIONS_KEY, submissions);
+      return { status: 'success' };
+    }
+
+    case 'admin_list_reward_redemptions':
+      return getList(MOCK_REDEMPTIONS_KEY);
+
+    case 'admin_update_reward_redemption': {
+      const redemptions = getList(MOCK_REDEMPTIONS_KEY);
+      const redemption = redemptions.find((item: any) => String(item.redemption_id || item.id) === String(args.p_redemption_id));
+      if (!redemption) throw new Error('ไม่พบรายการแลกรางวัล');
+      if (args.p_status === 'Cancelled' && redemption.status !== 'Cancelled') {
+        const target = users.find((item: any) => item.emp_id === redemption.emp_id);
+        if (target) target.points += Number(redemption.points_spent || 0);
+        const reward = getList(MOCK_REWARDS_KEY);
+        const rewardItem = reward.find((item: any) => String(item.id) === String(redemption.reward_id));
+        if (rewardItem && rewardItem.stock !== null) rewardItem.stock += 1;
+        saveList(MOCK_USERS_KEY, users);
+        saveList(MOCK_REWARDS_KEY, reward);
+      }
+      redemption.status = args.p_status;
+      redemption.updated_at = new Date().toISOString();
+      saveList(MOCK_REDEMPTIONS_KEY, redemptions);
+      return { status: 'success' };
+    }
 
     case 'admin_list_ledger':
       return getList(MOCK_LOGS_KEY);
@@ -750,9 +906,7 @@ export async function logout() {
   } catch (err) {
     console.warn(err);
   }
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
-  clearTempPassword();
+  clearSession();
   window.location.hash = '';
   window.location.reload();
 }

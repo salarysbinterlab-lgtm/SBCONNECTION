@@ -38,6 +38,12 @@
 ## Runtime Session
 26. `public_sessions`
 
+## Quotation / Drive Report Mirror
+27. `quotations` - quotation header, customer snapshot, calculated totals, Drive report links, sync version/hash
+28. `quotation_items` - normalized product/service lines
+29. `quotation_cost_notes` - Proposed Cost / SB Cost analysis lines
+30. `quotation_files` - Google Drive PDF, XLSX, image, and attachment references
+
 ## Views
 - `v_ranking`
 - `v_user_dashboard`

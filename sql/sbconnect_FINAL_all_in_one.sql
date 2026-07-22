@@ -1,5 +1,6 @@
--- SB Connect Supabase FINAL all-in-one (no reset)
--- ใช้กับฐานว่าง หรือหลังรัน 00_FULL_RESET_PUBLIC_SCHEMA_DEV_ONLY.sql
+-- GENERATED FILE: do not edit directly.
+-- Run `npm run sql:bundle` after changing a migration.
+-- Production-safe bundle for a blank database; destructive reset and DEV bootstrap are excluded.
 
 
 -- =========================================================
@@ -1323,7 +1324,7 @@ begin
   return jsonb_build_object('status','success','id',v_id);
 end $$;
 
-create or replace function public.admin_reset_user_password(p_token uuid, p_target_emp_id text, p_temp_password text default '1234')
+create or replace function public.admin_reset_user_password(p_token uuid, p_target_emp_id text, p_temp_password text default null)
 returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 declare v_actor text;
 begin
@@ -1339,6 +1340,25 @@ begin
   update app_users set force_password_change = true, password_reset_at = now(), password_reset_by_emp_id = v_actor, updated_at = now() where emp_id = p_target_emp_id;
   insert into admin_audit_logs(actor_emp_id, action, target_table, target_id, after_data) values(v_actor,'RESET_PASSWORD','app_users',p_target_emp_id,jsonb_build_object('must_change',true));
   return jsonb_build_object('status','success','message','Reset password สำเร็จ');
+end $$;
+
+create or replace function public.admin_reset_user_password(p_token uuid, p_target_emp_id text, p_temp_password text default null)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare v_actor text; v_temp_password text;
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_object('status','error','message','ADMIN_ONLY'); end if;
+  v_actor := public_session_emp_id(p_token);
+  if not exists(select 1 from app_users where emp_id = p_target_emp_id) then
+    return jsonb_build_object('status','error','message','Target employee ID not found');
+  end if;
+  v_temp_password := coalesce(nullif(trim(p_temp_password), ''), p_target_emp_id);
+  insert into user_credentials(emp_id, password_hash, must_change, reset_at, reset_by_emp_id)
+  values (p_target_emp_id, public.sb_hash_password(v_temp_password), true, now(), v_actor)
+  on conflict (emp_id) do update set password_hash = excluded.password_hash, must_change = true, reset_at = now(), reset_by_emp_id = v_actor;
+  update app_users set force_password_change = true, password_reset_at = now(), password_reset_by_emp_id = v_actor, updated_at = now() where emp_id = p_target_emp_id;
+  insert into admin_audit_logs(actor_emp_id, action, target_table, target_id, after_data)
+  values(v_actor,'RESET_PASSWORD','app_users',p_target_emp_id,jsonb_build_object('must_change',true,'initial_password','emp_id'));
+  return jsonb_build_object('status','success','message','Reset password success: temporary password = employee ID');
 end $$;
 
 -- Grants
@@ -1366,53 +1386,6 @@ grant execute on function public.admin_save_reward(uuid,text,text,text,int,int,t
 grant execute on function public.admin_save_user_simple(uuid,text,text,text,text,text,app_role,user_status) to anon, authenticated;
 grant execute on function public.admin_save_manager_dept(uuid,text,text) to anon, authenticated;
 grant execute on function public.admin_reset_user_password(uuid,text,text) to anon, authenticated;
-
-
--- =========================================================
--- 12_ADMIN_BOOTSTRAP_DEV.sql
--- =========================================================
-
--- 12_ADMIN_BOOTSTRAP_DEV.sql
--- สร้าง admin ตายตัวสำหรับทดสอบระบบ Admin
--- เปลี่ยนรหัสผ่านในบรรทัด v_admin_password ก่อนเปิด public จริง
-
-DO $$
-DECLARE
-  v_admin_emp_id text := 'ADMIN';
-  v_admin_password text := 'Admin123'; -- 8 characters, no Thai
-BEGIN
-  IF NOT public.sb_is_valid_password(v_admin_password) THEN
-    RAISE EXCEPTION 'Admin password must be exactly 8 characters and no Thai characters';
-  END IF;
-
-  INSERT INTO public.app_users(
-    emp_id, role, email, name_th, surname_th, nickname_th, dept_th, pos_th,
-    points, total_earned, presence, status, force_password_change, password_policy, created_at, updated_at
-  ) VALUES (
-    v_admin_emp_id, 'admin', 'admin@sbinterlab.local', 'System', 'Admin', 'Admin', 'IT', 'Administrator',
-    0, 0, 'offline', 'active', false, '8-char-no-thai', now(), now()
-  )
-  ON CONFLICT (emp_id) DO UPDATE SET
-    role = 'admin',
-    email = excluded.email,
-    name_th = excluded.name_th,
-    surname_th = excluded.surname_th,
-    nickname_th = excluded.nickname_th,
-    dept_th = excluded.dept_th,
-    pos_th = excluded.pos_th,
-    status = 'active',
-    force_password_change = false,
-    updated_at = now();
-
-  INSERT INTO public.user_credentials(emp_id, password_hash, must_change, changed_at)
-  VALUES (v_admin_emp_id, public.sb_hash_password(v_admin_password), false, now())
-  ON CONFLICT (emp_id) DO UPDATE SET
-    password_hash = excluded.password_hash,
-    must_change = false,
-    changed_at = now(),
-    reset_at = null,
-    reset_by_emp_id = null;
-END $$;
 
 
 -- =========================================================
@@ -2822,7 +2795,7 @@ set password_reset_by_emp_id = null
 where password_reset_by_emp_id is not null
   and not exists (select 1 from app_users u2 where u2.emp_id = app_users.password_reset_by_emp_id);
 
--- สร้าง/เติมรหัสเริ่มต้น 1234 เฉพาะคนที่ยังไม่มี credential
+-- สร้าง/เติมรหัสเริ่มต้นเป็นรหัสพนักงาน เฉพาะคนที่ยังไม่มี credential
 select public.prepare_first_login_credentials(null);
 
 update user_credentials c
@@ -2835,3 +2808,2559 @@ where u.emp_id = c.emp_id
 
 -- Recalculate point summary from imported point_transactions
 select public.recalc_user_points(emp_id) from app_users;
+
+
+-- =========================================================
+-- 94_EMP_ID_FIRST_LOGIN_PASSWORD.sql
+-- =========================================================
+
+-- 94_EMP_ID_FIRST_LOGIN_PASSWORD.sql
+-- Production patch: first login password must match employee ID.
+-- Run this after the base schema/seed on Supabase SQL Editor.
+
+begin;
+
+create or replace function public.prepare_first_login_credentials(p_temp_password text default null)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare v_count int;
+begin
+  insert into user_credentials(emp_id, password_hash, must_change, reset_at)
+  select u.emp_id, public.sb_hash_password(coalesce(nullif(trim(p_temp_password), ''), u.emp_id)), true, now()
+  from app_users u
+  left join user_credentials c on c.emp_id = u.emp_id
+  where c.emp_id is null and u.status = 'active';
+
+  get diagnostics v_count = row_count;
+
+  update app_users
+  set force_password_change = true,
+      password_reset_at = coalesce(password_reset_at, now()),
+      password_reset_by_emp_id = null,
+      updated_at = now()
+  where status = 'active'
+    and emp_id in (select emp_id from user_credentials where must_change = true);
+
+  return jsonb_build_object('status','success','created_credentials',v_count,'mode','emp_id_initial_password');
+end $$;
+
+create or replace function public.admin_reset_user_password(p_token uuid, p_target_emp_id text, p_temp_password text default null)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare v_actor text; v_temp_password text;
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_object('status','error','message','ADMIN_ONLY'); end if;
+  v_actor := public_session_emp_id(p_token);
+  if not exists(select 1 from app_users where emp_id = p_target_emp_id) then
+    return jsonb_build_object('status','error','message','Target employee ID not found');
+  end if;
+
+  v_temp_password := coalesce(nullif(trim(p_temp_password), ''), p_target_emp_id);
+
+  insert into user_credentials(emp_id, password_hash, must_change, reset_at, reset_by_emp_id)
+  values (p_target_emp_id, public.sb_hash_password(v_temp_password), true, now(), v_actor)
+  on conflict (emp_id) do update
+    set password_hash = excluded.password_hash,
+        must_change = true,
+        reset_at = now(),
+        reset_by_emp_id = v_actor;
+
+  update app_users
+  set force_password_change = true,
+      password_reset_at = now(),
+      password_reset_by_emp_id = v_actor,
+      updated_at = now()
+  where emp_id = p_target_emp_id;
+
+  insert into admin_audit_logs(actor_emp_id, action, target_table, target_id, after_data)
+  values(v_actor,'RESET_PASSWORD','app_users',p_target_emp_id,jsonb_build_object('must_change',true,'initial_password','emp_id'));
+
+  return jsonb_build_object('status','success','message','Reset password success: temporary password = employee ID');
+end $$;
+
+create or replace function public.admin_reset_password(p_token uuid, p_emp_id text, p_temp_password text default null)
+returns jsonb language sql security definer set search_path = public as $$
+  select public.admin_reset_user_password(p_token, p_emp_id, p_temp_password)
+$$;
+
+-- Convert only accounts that are still in first-login/reset mode.
+-- People who already changed their password (must_change=false) are left untouched.
+update user_credentials c
+set password_hash = public.sb_hash_password(c.emp_id),
+    reset_at = now()
+from app_users u
+where u.emp_id = c.emp_id
+  and u.status = 'active'
+  and (coalesce(c.must_change, false) = true or coalesce(u.force_password_change, false) = true);
+
+update app_users u
+set force_password_change = true,
+    password_reset_at = coalesce(password_reset_at, now()),
+    updated_at = now()
+where u.status = 'active'
+  and exists (
+    select 1
+    from user_credentials c
+    where c.emp_id = u.emp_id
+      and coalesce(c.must_change, false) = true
+  );
+
+grant execute on function public.prepare_first_login_credentials(text) to anon, authenticated;
+grant execute on function public.admin_reset_user_password(uuid,text,text) to anon, authenticated;
+grant execute on function public.admin_reset_password(uuid,text,text) to anon, authenticated;
+
+commit;
+
+
+-- =========================================================
+-- 95_ADMIN_ACCOUNTS_SPECIAL_POINTS_ACTIVITY.sql
+-- =========================================================
+
+-- 95_ADMIN_ACCOUNTS_SPECIAL_POINTS_ACTIVITY.sql
+-- Production patch for admin/dev accounts, special point adjustment, and overall activity logs.
+-- Run in Supabase SQL Editor after current schema patches.
+
+begin;
+
+create table if not exists activity_logs (
+  log_id uuid primary key default gen_random_uuid(),
+  action_group text not null,
+  action text not null,
+  actor_emp_id text references app_users(emp_id) on delete set null,
+  target_emp_id text references app_users(emp_id) on delete set null,
+  target_table text,
+  target_id text,
+  description text,
+  before_data jsonb,
+  after_data jsonb,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_activity_logs_group_time on activity_logs(action_group, created_at desc);
+create index if not exists idx_activity_logs_actor_time on activity_logs(actor_emp_id, created_at desc);
+create index if not exists idx_activity_logs_target_time on activity_logs(target_emp_id, created_at desc);
+
+alter table activity_logs enable row level security;
+
+drop policy if exists "admin read activity logs" on activity_logs;
+create policy "admin read activity logs" on activity_logs
+for select to authenticated using (is_admin());
+
+create or replace function public.write_activity_log(
+  p_action_group text,
+  p_action text,
+  p_actor_emp_id text default null,
+  p_target_emp_id text default null,
+  p_target_table text default null,
+  p_target_id text default null,
+  p_description text default null,
+  p_before_data jsonb default null,
+  p_after_data jsonb default null,
+  p_metadata jsonb default '{}'::jsonb
+)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare v_log_id uuid;
+begin
+  insert into activity_logs(action_group, action, actor_emp_id, target_emp_id, target_table, target_id, description, before_data, after_data, metadata)
+  values (
+    coalesce(nullif(trim(p_action_group), ''), 'system'),
+    coalesce(nullif(trim(p_action), ''), 'UNKNOWN'),
+    nullif(trim(p_actor_emp_id), ''),
+    nullif(trim(p_target_emp_id), ''),
+    nullif(trim(p_target_table), ''),
+    nullif(trim(p_target_id), ''),
+    p_description,
+    p_before_data,
+    p_after_data,
+    coalesce(p_metadata, '{}'::jsonb)
+  )
+  returning log_id into v_log_id;
+  return v_log_id;
+end $$;
+
+create or replace function public.bootstrap_admin_staff_accounts()
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare item record;
+begin
+  for item in
+    select * from (values
+      ('admin'::text,  'dev'::app_role,   'Developer Owner'),
+      ('admin1'::text, 'admin'::app_role, 'HR Admin 1'),
+      ('admin2'::text, 'admin'::app_role, 'HR Admin 2'),
+      ('admin3'::text, 'admin'::app_role, 'HR Admin 3'),
+      ('admin4'::text, 'admin'::app_role, 'HR Admin 4')
+    ) as x(emp_id, role_name, display_name)
+  loop
+    insert into app_users(emp_id, role, name_th, surname_th, nickname_th, dept_th, pos_th, status, force_password_change, password_policy)
+    values(item.emp_id, item.role_name, item.display_name, null, item.emp_id, 'Admin', 'Administrator', 'active', true, '8-char-no-thai')
+    on conflict(emp_id) do update set
+      role = excluded.role,
+      name_th = excluded.name_th,
+      nickname_th = excluded.nickname_th,
+      dept_th = excluded.dept_th,
+      pos_th = excluded.pos_th,
+      status = 'active',
+      force_password_change = true,
+      updated_at = now();
+
+    insert into user_credentials(emp_id, password_hash, must_change, reset_at)
+    values(item.emp_id, public.sb_hash_password(item.emp_id), true, now())
+    on conflict(emp_id) do update set
+      password_hash = excluded.password_hash,
+      must_change = true,
+      reset_at = now(),
+      reset_by_emp_id = null;
+  end loop;
+
+  update app_users
+  set role = 'user', updated_at = now()
+  where emp_id in ('ADMIN')
+    and role in ('admin', 'admin_it', 'dev');
+
+  perform public.write_activity_log(
+    'admin',
+    'BOOTSTRAP_ADMIN_STAFF',
+    'admin',
+    null,
+    'app_users',
+    'admin,admin1,admin2,admin3,admin4',
+    'Bootstrap admin/dev staff accounts with password equal to emp_id and must-change enabled.',
+    null,
+    jsonb_build_object('admin','dev','admin1','admin','admin2','admin','admin3','admin','admin4','admin')
+  );
+
+  return jsonb_build_object('status','success','accounts',jsonb_build_array('admin','admin1','admin2','admin3','admin4'));
+end $$;
+
+-- Run `select public.bootstrap_admin_staff_accounts();` manually only when
+-- the organization explicitly wants these predictable first-login accounts.
+
+create or replace function public.admin_add_special_points(
+  p_token uuid,
+  p_confirm_admin_emp_id text,
+  p_hr_emp_id text,
+  p_target_emp_id text,
+  p_points int,
+  p_reason text default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_actor text;
+  v_points int := greatest(coalesce(p_points, 0), 0);
+  v_tx record;
+  v_before int;
+  v_source_id text;
+begin
+  if not public_session_is_admin(p_token) then
+    return jsonb_build_object('status','error','message','ADMIN_ONLY');
+  end if;
+
+  v_actor := public_session_emp_id(p_token);
+
+  if lower(trim(coalesce(p_confirm_admin_emp_id, ''))) <> lower(trim(coalesce(v_actor, ''))) then
+    return jsonb_build_object('status','error','message','ADMIN_ID_CONFIRM_MISMATCH');
+  end if;
+
+  if v_points <= 0 then
+    return jsonb_build_object('status','error','message','POINTS_MUST_BE_POSITIVE');
+  end if;
+
+  if v_points > 100000 then
+    return jsonb_build_object('status','error','message','POINTS_TOO_LARGE');
+  end if;
+
+  if not exists(select 1 from app_users where emp_id = p_hr_emp_id and status = 'active') then
+    return jsonb_build_object('status','error','message','HR_EMP_ID_NOT_FOUND');
+  end if;
+
+  select points into v_before from app_users where emp_id = p_target_emp_id and status = 'active' for update;
+  if not found then
+    return jsonb_build_object('status','error','message','TARGET_EMP_ID_NOT_FOUND');
+  end if;
+
+  v_source_id := 'SP-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 10));
+
+  select * into v_tx
+  from add_point_transaction(
+    p_target_emp_id,
+    'adjust',
+    v_points,
+    coalesce(nullif(trim(p_reason), ''), 'Special points by admin'),
+    'SPECIAL_POINTS',
+    v_source_id,
+    jsonb_build_object(
+      'admin_emp_id', v_actor,
+      'confirm_admin_emp_id', p_confirm_admin_emp_id,
+      'hr_emp_id', p_hr_emp_id,
+      'target_emp_id', p_target_emp_id,
+      'reason', p_reason
+    )
+  );
+
+  insert into overall_logs(log_id, employee_id, source_type, source_id, point_before, points_change, point_after, activity_date, activity_time, metadata)
+  values (
+    v_source_id,
+    p_target_emp_id,
+    'SPECIAL_POINTS',
+    v_tx.tx_id,
+    v_before,
+    v_points,
+    v_tx.balance_after,
+    current_date,
+    localtime(0),
+    jsonb_build_object('admin_emp_id', v_actor, 'hr_emp_id', p_hr_emp_id, 'reason', p_reason, 'tx_id', v_tx.tx_id)
+  );
+
+  insert into admin_audit_logs(actor_emp_id, action, target_table, target_id, after_data)
+  values (
+    v_actor,
+    'ADD_SPECIAL_POINTS',
+    'point_transactions',
+    v_tx.tx_id,
+    jsonb_build_object('hr_emp_id', p_hr_emp_id, 'target_emp_id', p_target_emp_id, 'points', v_points, 'reason', p_reason, 'balance_after', v_tx.balance_after)
+  );
+
+  perform public.write_activity_log(
+    'points',
+    'ADD_SPECIAL_POINTS',
+    v_actor,
+    p_target_emp_id,
+    'point_transactions',
+    v_tx.tx_id,
+    coalesce(nullif(trim(p_reason), ''), 'Special points by admin'),
+    jsonb_build_object('points', v_before),
+    jsonb_build_object('points', v_tx.balance_after, 'change', v_points),
+    jsonb_build_object('hr_emp_id', p_hr_emp_id, 'source_id', v_source_id)
+  );
+
+  return jsonb_build_object(
+    'status','success',
+    'tx_id',v_tx.tx_id,
+    'source_id',v_source_id,
+    'target_emp_id',p_target_emp_id,
+    'points_added',v_points,
+    'balance_after',v_tx.balance_after
+  );
+end $$;
+
+create or replace function public.admin_list_special_point_logs(p_token uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_array(); end if;
+  return coalesce((select jsonb_agg(to_jsonb(x)) from (
+    select
+      pt.tx_id as id,
+      pt.created_at,
+      pt.emp_id as target_emp_id,
+      pt.amount as points,
+      pt.balance_after,
+      pt.description,
+      pt.metadata->>'admin_emp_id' as admin_emp_id,
+      pt.metadata->>'hr_emp_id' as hr_emp_id,
+      pt.source_id
+    from point_transactions pt
+    where pt.source_type = 'SPECIAL_POINTS'
+    order by pt.created_at desc
+    limit 500
+  ) x),'[]'::jsonb);
+end $$;
+
+create or replace function public.admin_list_overall_activity(p_token uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_array(); end if;
+  return coalesce((select jsonb_agg(to_jsonb(x)) from (
+    select
+      created_at,
+      action_group,
+      action,
+      actor_emp_id,
+      target_emp_id,
+      target_table,
+      target_id,
+      description
+    from (
+      select created_at, action_group, action, actor_emp_id, target_emp_id, target_table, target_id, description
+      from activity_logs
+      union all
+      select created_at, 'admin', action, actor_emp_id, null, target_table, target_id, coalesce(after_data::text, '')
+      from admin_audit_logs
+      union all
+      select created_at, 'auth', 'LOGIN', emp_id, emp_id, 'public_sessions', session_token::text, 'User login session created'
+      from public_sessions
+      union all
+      select created_at, 'points', coalesce(source_type, tx_type::text), null, emp_id, 'point_transactions', tx_id, description
+      from point_transactions
+      union all
+      select created_at, 'rewards', 'REDEEM', null, emp_id, 'reward_redemptions', redemption_id, reward_name
+      from reward_redemptions
+      union all
+      select created_at, 'activity', 'CHECKIN', null, emp_id, 'checkin_logs', log_id, status
+      from checkin_logs
+      union all
+      select read_at as created_at, 'news', 'READ_NEWS', null, emp_id, 'user_news_reads', news_id, topic
+      from user_news_reads
+      union all
+      select completed_at as created_at, 'missions', 'COMPLETE_MISSION', null, emp_id, 'user_missions', mission_id, status
+      from user_missions
+    ) unioned
+    where created_at is not null
+    order by created_at desc
+    limit 1000
+  ) x),'[]'::jsonb);
+end $$;
+
+revoke execute on function public.write_activity_log(text,text,text,text,text,text,text,jsonb,jsonb,jsonb) from public, anon, authenticated;
+revoke execute on function public.bootstrap_admin_staff_accounts() from public, anon, authenticated;
+grant execute on function public.admin_add_special_points(uuid,text,text,text,int,text) to anon, authenticated;
+grant execute on function public.admin_list_special_point_logs(uuid) to anon, authenticated;
+grant execute on function public.admin_list_overall_activity(uuid) to anon, authenticated;
+
+commit;
+
+
+-- =========================================================
+-- 13_PRODUCTION_SECURITY_AND_ASSETS.sql
+-- =========================================================
+
+-- 13_PRODUCTION_SECURITY_AND_ASSETS.sql
+-- Run after 12/90/91/92. Adds production session validation and Drive asset helpers.
+
+create index if not exists idx_public_sessions_emp_active
+  on public_sessions(emp_id, expires_at)
+  where revoked_at is null;
+
+create index if not exists idx_drive_assets_owner_module
+  on drive_assets(owner_emp_id, module, created_at desc);
+
+create index if not exists idx_admin_audit_logs_actor_time
+  on admin_audit_logs(actor_emp_id, created_at desc);
+
+create table if not exists login_attempt_logs (
+  id bigserial primary key,
+  emp_id text,
+  success boolean not null default false,
+  reason text,
+  user_agent text,
+  created_at timestamptz not null default now()
+);
+
+alter table login_attempt_logs enable row level security;
+
+drop policy if exists "admin read login attempts" on login_attempt_logs;
+create policy "admin read login attempts" on login_attempt_logs
+for select to authenticated using (is_admin());
+
+create or replace function public.validate_public_session(p_token uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  s public_sessions%rowtype;
+  u app_users%rowtype;
+  v_unread int;
+begin
+  select *
+  into s
+  from public_sessions
+  where session_token = p_token
+    and revoked_at is null
+    and expires_at > now()
+  limit 1;
+
+  if not found then
+    return jsonb_build_object('status','error','message','SESSION_EXPIRED');
+  end if;
+
+  select *
+  into u
+  from app_users
+  where emp_id = s.emp_id
+    and status = 'active'
+  limit 1;
+
+  if not found then
+    update public_sessions set revoked_at = now() where session_token = p_token;
+    return jsonb_build_object('status','error','message','USER_DISABLED');
+  end if;
+
+  select count(*)
+  into v_unread
+  from notifications
+  where (emp_id = u.emp_id or emp_id is null)
+    and is_read = false;
+
+  update app_users
+  set presence = 'online',
+      updated_at = now()
+  where emp_id = u.emp_id;
+
+  return jsonb_build_object(
+    'status','success',
+    'expiresAt',s.expires_at,
+    'user',jsonb_build_object(
+      'empId',u.emp_id,
+      'emp_id',u.emp_id,
+      'role',u.role,
+      'email',u.email,
+      'name',trim(concat_ws(' ',u.name_th,u.surname_th)),
+      'full_name',trim(concat_ws(' ',u.name_th,u.surname_th)),
+      'nickname',u.nickname_th,
+      'dept',u.dept_th,
+      'department',u.dept_th,
+      'position',u.pos_th,
+      'points',u.points,
+      'avatar',u.avatar_url,
+      'avatar_url',u.avatar_url,
+      'checkInCount',u.check_in_count,
+      'lastCheckIn',u.last_check_in,
+      'unreadNotifications',coalesce(v_unread,0),
+      'mustChangePassword',coalesce(u.force_password_change,false)
+    )
+  );
+end $$;
+
+create or replace function public.public_save_my_avatar(
+  p_token uuid,
+  p_display_url text,
+  p_drive_file_id text default null,
+  p_file_name text default null,
+  p_mime_type text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_emp_id text;
+  v_asset_id uuid;
+begin
+  v_emp_id := public_session_emp_id(p_token);
+  if v_emp_id is null then
+    return jsonb_build_object('status','error','message','SESSION_EXPIRED');
+  end if;
+
+  if coalesce(trim(p_display_url),'') = '' then
+    return jsonb_build_object('status','error','message','IMAGE_URL_REQUIRED');
+  end if;
+
+  update app_users
+  set avatar_url = p_display_url,
+      updated_at = now()
+  where emp_id = v_emp_id;
+
+  insert into drive_assets(owner_emp_id, module, ref_table, ref_id, drive_file_id, display_url, mime_type, file_name)
+  values(v_emp_id, 'avatar', 'app_users', v_emp_id, p_drive_file_id, p_display_url, p_mime_type, p_file_name)
+  returning asset_id into v_asset_id;
+
+  return jsonb_build_object('status','success','assetId',v_asset_id,'avatarUrl',p_display_url);
+end $$;
+
+create or replace function public.admin_record_drive_asset(
+  p_token uuid,
+  p_module text,
+  p_ref_table text,
+  p_ref_id text,
+  p_display_url text,
+  p_drive_file_id text default null,
+  p_drive_folder_id text default null,
+  p_file_name text default null,
+  p_mime_type text default null,
+  p_metadata jsonb default '{}'::jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_actor text;
+  v_asset_id uuid;
+begin
+  if not public_session_is_admin(p_token) then
+    return jsonb_build_object('status','error','message','ADMIN_ONLY');
+  end if;
+
+  v_actor := public_session_emp_id(p_token);
+
+  if coalesce(trim(p_display_url),'') = '' then
+    return jsonb_build_object('status','error','message','IMAGE_URL_REQUIRED');
+  end if;
+
+  insert into drive_assets(
+    owner_emp_id, module, ref_table, ref_id, drive_file_id, drive_folder_id,
+    display_url, mime_type, file_name, metadata
+  )
+  values(
+    v_actor, coalesce(nullif(trim(p_module),''),'general'), p_ref_table, p_ref_id,
+    p_drive_file_id, p_drive_folder_id, p_display_url, p_mime_type, p_file_name,
+    coalesce(p_metadata,'{}'::jsonb)
+  )
+  returning asset_id into v_asset_id;
+
+  insert into admin_audit_logs(actor_emp_id, action, target_table, target_id, after_data)
+  values(v_actor, 'RECORD_DRIVE_ASSET', 'drive_assets', v_asset_id::text,
+         jsonb_build_object('module',p_module,'refTable',p_ref_table,'refId',p_ref_id));
+
+  return jsonb_build_object('status','success','assetId',v_asset_id,'displayUrl',p_display_url);
+end $$;
+
+grant execute on function public.validate_public_session(uuid) to anon, authenticated;
+grant execute on function public.public_save_my_avatar(uuid,text,text,text,text) to anon, authenticated;
+grant execute on function public.admin_record_drive_asset(uuid,text,text,text,text,text,text,text,text,jsonb) to anon, authenticated;
+
+
+-- =========================================================
+-- 14_LEGACY_RPC_ALIASES_FOR_REACT_APP.sql
+-- =========================================================
+
+-- 14_LEGACY_RPC_ALIASES_FOR_REACT_APP.sql
+-- Compatibility RPCs for the React SPA. Run after 13.
+
+create table if not exists calendar_events (
+  id bigserial primary key,
+  event_date date not null,
+  type text not null default 'event',
+  label text not null,
+  color text not null default '#8b5cf6',
+  is_active boolean not null default true,
+  created_by_emp_id text references app_users(emp_id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(event_date, type, label)
+);
+
+alter table calendar_events add column if not exists color text not null default '#8b5cf6';
+alter table calendar_events enable row level security;
+
+drop policy if exists "admin manage calendar events" on calendar_events;
+create policy "admin manage calendar events" on calendar_events
+for all to authenticated using (is_admin()) with check (is_admin());
+
+create table if not exists rule_board_posts (
+  id bigserial primary key,
+  category text not null default 'policy',
+  title text not null,
+  body_html text not null default '',
+  color text not null default '#8b5cf6',
+  sort_order int not null default 0,
+  is_active boolean not null default true,
+  created_by_emp_id text references app_users(emp_id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table rule_board_posts enable row level security;
+
+drop policy if exists "read active rule board posts" on rule_board_posts;
+create policy "read active rule board posts" on rule_board_posts
+for select to anon, authenticated using (is_active = true);
+
+drop policy if exists "admin manage rule board posts" on rule_board_posts;
+create policy "admin manage rule board posts" on rule_board_posts
+for all to authenticated using (is_admin()) with check (is_admin());
+
+create or replace function public.get_home_dashboard(p_token uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  p jsonb;
+  v_user jsonb;
+begin
+  p := public.get_home_payload(p_token);
+  if p->>'status' = 'error' then return p; end if;
+  v_user := coalesce(p->'user','{}'::jsonb);
+
+  return p || jsonb_build_object(
+    'points',coalesce((v_user->>'points')::int,0),
+    'checkin_count',coalesce((v_user->>'checkInCount')::int,0),
+    'last_checkin',v_user->>'lastCheckIn',
+    'latest_news',coalesce(p->'news','[]'::jsonb),
+    'top_ranking',coalesce(p->'ranking','[]'::jsonb)
+  );
+end $$;
+
+create or replace function public.get_my_profile(p_token uuid)
+returns jsonb
+language sql
+security definer
+set search_path = public
+as $$
+  select public.validate_public_session(p_token)->'user'
+$$;
+
+create or replace function public.daily_checkin(p_token uuid)
+returns jsonb
+language sql
+security definer
+set search_path = public
+as $$
+  select public.public_checkin(p_token)
+$$;
+
+create or replace function public.list_news(p_token uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  return coalesce((public.public_page_payload(p_token, 'news'))->'items','[]'::jsonb);
+end $$;
+
+create or replace function public.list_missions(p_token uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  return coalesce((public.public_page_payload(p_token, 'mission'))->'items','[]'::jsonb);
+end $$;
+
+create or replace function public.list_rewards(p_token uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  return coalesce((public.public_page_payload(p_token, 'rewards'))->'items','[]'::jsonb);
+end $$;
+
+create or replace function public.list_ranking(p_token uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  return coalesce((public.public_page_payload(p_token, 'ranking'))->'items','[]'::jsonb);
+end $$;
+
+create or replace function public.list_my_overall_logs(p_token uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  return coalesce((public.public_page_payload(p_token, 'overall_log'))->'items','[]'::jsonb);
+end $$;
+
+create or replace function public.read_news(p_token uuid, p_news_id text)
+returns jsonb
+language sql
+security definer
+set search_path = public
+as $$
+  select public.public_read_news(p_token, p_news_id)
+$$;
+
+create or replace function public.submit_mission(p_token uuid, p_mission_id text)
+returns jsonb
+language sql
+security definer
+set search_path = public
+as $$
+  select public.public_complete_mission(p_token, p_mission_id, null)
+$$;
+
+create or replace function public.redeem_reward(p_token uuid, p_reward_id text)
+returns jsonb
+language sql
+security definer
+set search_path = public
+as $$
+  select public.public_redeem_reward(p_token, p_reward_id)
+$$;
+
+create or replace function public.list_notifications(p_token uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  return coalesce((
+    select jsonb_agg(
+      jsonb_build_object(
+        'id', x.notification_id,
+        'notification_id', x.notification_id,
+        'title', x.title,
+        'detail', x.message,
+        'message', x.message,
+        'type', x.type,
+        'is_read', x.is_read,
+        'created_at', x.created_at
+      )
+    )
+    from jsonb_to_recordset(coalesce((public.public_list_notifications(p_token))->'items','[]'::jsonb))
+      as x(notification_id text, title text, message text, type text, is_read boolean, created_at timestamptz)
+  ), '[]'::jsonb);
+end $$;
+
+create or replace function public.mark_notification_read(p_token uuid, p_notification_id text)
+returns jsonb
+language sql
+security definer
+set search_path = public
+as $$
+  select public.public_mark_notification_read(p_token, p_notification_id)
+$$;
+
+create or replace function public.get_admin_dashboard(p_token uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  p jsonb;
+  k jsonb;
+begin
+  p := public.admin_dashboard_payload(p_token);
+  if p->>'status' = 'error' then return p; end if;
+  k := coalesce(p->'kpi','{}'::jsonb);
+  return p || jsonb_build_object(
+    'total_users',coalesce((k->>'users')::int,0),
+    'total_news',(select count(*) from news_posts),
+    'total_missions',(select count(*) from missions),
+    'total_rewards',(select count(*) from rewards),
+    'users',coalesce(p->'recentUsers','[]'::jsonb),
+    'logs',coalesce(p->'recentLogs','[]'::jsonb),
+    'ranking',coalesce(p->'topUsers','[]'::jsonb)
+  );
+end $$;
+
+create or replace function public.admin_list_users(p_token uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_array(); end if;
+  return coalesce((select jsonb_agg(to_jsonb(x)) from (
+    select emp_id,
+           trim(concat_ws(' ',name_th,surname_th)) as full_name,
+           dept_th as department,
+           role,
+           status,
+           points
+    from app_users
+    order by emp_id
+  ) x),'[]'::jsonb);
+end $$;
+
+create or replace function public.admin_list_news(p_token uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_array(); end if;
+  return coalesce((select jsonb_agg(to_jsonb(x)) from (
+    select news_id as id, news_id, topic, detail, points, image_url,
+           status = 'active' as is_active, publish_date, created_at
+    from news_posts order by created_at desc
+  ) x),'[]'::jsonb);
+end $$;
+
+create or replace function public.admin_list_missions(p_token uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_array(); end if;
+  return coalesce((select jsonb_agg(to_jsonb(x)) from (
+    select mission_id as id, mission_id, title, description, points, image_url,
+           status = 'active' as is_active, created_at
+    from missions order by created_at desc
+  ) x),'[]'::jsonb);
+end $$;
+
+create or replace function public.admin_list_rewards(p_token uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_array(); end if;
+  return coalesce((select jsonb_agg(to_jsonb(x)) from (
+    select reward_id as id, reward_id, name, detail, points_required, stock, image_url,
+           status = 'active' as is_active, created_at
+    from rewards order by created_at desc
+  ) x),'[]'::jsonb);
+end $$;
+
+create or replace function public.admin_list_ledger(p_token uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_array(); end if;
+  return coalesce((select jsonb_agg(to_jsonb(x)) from (
+    select tx_id as id, tx_id, emp_id, amount, tx_type, source_type, description, balance_after, created_at
+    from point_transactions order by created_at desc limit 500
+  ) x),'[]'::jsonb);
+end $$;
+
+create or replace function public.admin_list_manager_depts(p_token uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_array(); end if;
+  return coalesce((select jsonb_agg(to_jsonb(x)) from (
+    select id, manager_emp_id, dept_th as department_id, dept_th as department_name, true as is_active, updated_at
+    from manager_department_permissions order by updated_at desc
+  ) x),'[]'::jsonb);
+end $$;
+
+create or replace function public.admin_upsert_user(p_token uuid, p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  return public.admin_save_user_simple(
+    p_token,
+    p_payload->>'emp_id',
+    p_payload->>'full_name',
+    null,
+    p_payload->>'department',
+    null,
+    coalesce(nullif(p_payload->>'role',''),'user')::app_role,
+    case when upper(coalesce(p_payload->>'status','active')) = 'INACTIVE' then 'inactive'::user_status else 'active'::user_status end
+  );
+end $$;
+
+create or replace function public.admin_upsert_news(p_token uuid, p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  return public.admin_save_news(
+    p_token,
+    p_payload->>'id',
+    coalesce(p_payload->>'topic', p_payload->>'title'),
+    p_payload->>'detail',
+    coalesce((p_payload->>'points')::int,0),
+    nullif(p_payload->>'image_url',''),
+    case when coalesce((p_payload->>'is_active')::boolean,true) then 'active'::content_status else 'inactive'::content_status end
+  );
+end $$;
+
+create or replace function public.admin_upsert_mission(p_token uuid, p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  return public.admin_save_mission(
+    p_token,
+    p_payload->>'id',
+    coalesce(p_payload->>'title', p_payload->>'topic'),
+    p_payload->>'description',
+    coalesce((p_payload->>'points')::int,0),
+    nullif(p_payload->>'image_url',''),
+    case when coalesce((p_payload->>'is_active')::boolean,true) then 'active'::content_status else 'inactive'::content_status end
+  );
+end $$;
+
+create or replace function public.admin_upsert_reward(p_token uuid, p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  return public.admin_save_reward(
+    p_token,
+    p_payload->>'id',
+    coalesce(p_payload->>'name', p_payload->>'title'),
+    p_payload->>'detail',
+    coalesce((p_payload->>'points_required')::int,0),
+    coalesce((p_payload->>'stock')::int,0),
+    nullif(p_payload->>'image_url',''),
+    case when coalesce((p_payload->>'is_active')::boolean,true) then 'active'::content_status else 'inactive'::content_status end
+  );
+end $$;
+
+create or replace function public.admin_upsert_manager_dept(p_token uuid, p_payload jsonb)
+returns jsonb language sql security definer set search_path = public as $$
+  select public.admin_save_manager_dept(p_token, p_payload->>'manager_emp_id', coalesce(p_payload->>'department_name', p_payload->>'department_id'))
+$$;
+
+create or replace function public.admin_save_manager_depts_batch(p_token uuid, p_mappings jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_actor text;
+  item jsonb;
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_object('status','error','message','ADMIN_ONLY'); end if;
+  v_actor := public_session_emp_id(p_token);
+
+  delete from manager_department_permissions;
+  for item in select * from jsonb_array_elements(coalesce(p_mappings,'[]'::jsonb)) loop
+    if coalesce(item->>'manager_emp_id','') <> '' and coalesce(item->>'department_name', item->>'department_id','') <> '' then
+      insert into manager_department_permissions(manager_emp_id, dept_th, updated_by_emp_id)
+      values(item->>'manager_emp_id', coalesce(item->>'department_name', item->>'department_id'), v_actor)
+      on conflict(manager_emp_id, dept_th) do update set updated_by_emp_id = excluded.updated_by_emp_id, updated_at = now();
+    end if;
+  end loop;
+  return jsonb_build_object('status','success');
+end $$;
+
+create or replace function public.admin_delete_user(p_token uuid, p_emp_id text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_object('status','error','message','ADMIN_ONLY'); end if;
+  update app_users set status = 'inactive', updated_at = now() where emp_id = p_emp_id;
+  return jsonb_build_object('status','success');
+end $$;
+
+create or replace function public.admin_delete_news(p_token uuid, p_id text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_object('status','error','message','ADMIN_ONLY'); end if;
+  update news_posts set status = 'archived', updated_at = now() where news_id = p_id;
+  return jsonb_build_object('status','success');
+end $$;
+
+create or replace function public.admin_delete_mission(p_token uuid, p_id text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_object('status','error','message','ADMIN_ONLY'); end if;
+  update missions set status = 'archived', updated_at = now() where mission_id = p_id;
+  return jsonb_build_object('status','success');
+end $$;
+
+create or replace function public.admin_delete_reward(p_token uuid, p_id text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_object('status','error','message','ADMIN_ONLY'); end if;
+  update rewards set status = 'archived', updated_at = now() where reward_id = p_id;
+  return jsonb_build_object('status','success');
+end $$;
+
+create or replace function public.admin_reset_password(p_token uuid, p_emp_id text, p_temp_password text default null)
+returns jsonb language sql security definer set search_path = public as $$
+  select public.admin_reset_user_password(p_token, p_emp_id, p_temp_password)
+$$;
+
+create or replace function public.list_calendar_events(p_token uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if public_session_emp_id(p_token) is null then return jsonb_build_array(); end if;
+  return coalesce((select jsonb_agg(to_jsonb(x)) from (
+    select id, event_date as date, type, label, color, is_active, created_by_emp_id as created_by
+    from calendar_events
+    where is_active = true
+    order by event_date desc
+  ) x),'[]'::jsonb);
+end $$;
+
+create or replace function public.admin_list_calendar_events(p_token uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_array(); end if;
+  return coalesce((select jsonb_agg(to_jsonb(x)) from (
+    select id, event_date as date, type, label, color, is_active, created_by_emp_id as created_by
+    from calendar_events
+    order by event_date desc
+  ) x),'[]'::jsonb);
+end $$;
+
+create or replace function public.admin_upsert_calendar_event(p_token uuid, p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_actor text;
+  v_id bigint;
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_object('status','error','message','ADMIN_ONLY'); end if;
+  v_actor := public_session_emp_id(p_token);
+  v_id := nullif(p_payload->>'id','')::bigint;
+
+  if v_id is null then
+    insert into calendar_events(event_date, type, label, color, is_active, created_by_emp_id)
+    values(
+      (p_payload->>'date')::date,
+      coalesce(p_payload->>'type','event'),
+      coalesce(p_payload->>'label','Event'),
+      coalesce(p_payload->>'color','#8b5cf6'),
+      coalesce((p_payload->>'is_active')::boolean,true),
+      v_actor
+    );
+  else
+    update calendar_events
+    set event_date = (p_payload->>'date')::date,
+        type = coalesce(p_payload->>'type', type),
+        label = coalesce(p_payload->>'label', label),
+        color = coalesce(p_payload->>'color', color),
+        is_active = coalesce((p_payload->>'is_active')::boolean, is_active),
+        updated_at = now()
+    where id = v_id;
+  end if;
+
+  return jsonb_build_object('status','success');
+end $$;
+
+create or replace function public.admin_delete_calendar_event(p_token uuid, p_id bigint)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_object('status','error','message','ADMIN_ONLY'); end if;
+  delete from calendar_events where id = p_id;
+  return jsonb_build_object('status','success');
+end $$;
+
+create or replace function public.list_rule_board(p_token uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if public_session_emp_id(p_token) is null then return jsonb_build_array(); end if;
+  return coalesce((select jsonb_agg(to_jsonb(x)) from (
+    select id, category, title, body_html, color, sort_order, is_active, updated_at
+    from rule_board_posts
+    where is_active = true
+    order by sort_order asc, id asc
+  ) x),'[]'::jsonb);
+end $$;
+
+create or replace function public.admin_list_rule_board(p_token uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_array(); end if;
+  return coalesce((select jsonb_agg(to_jsonb(x)) from (
+    select id, category, title, body_html, color, sort_order, is_active, created_by_emp_id as created_by, created_at, updated_at
+    from rule_board_posts
+    order by sort_order asc, id asc
+  ) x),'[]'::jsonb);
+end $$;
+
+create or replace function public.admin_upsert_rule_board(p_token uuid, p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_actor text;
+  v_id bigint;
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_object('status','error','message','ADMIN_ONLY'); end if;
+  v_actor := public_session_emp_id(p_token);
+  v_id := nullif(p_payload->>'id','')::bigint;
+
+  if v_id is null then
+    insert into rule_board_posts(category, title, body_html, color, sort_order, is_active, created_by_emp_id)
+    values(
+      coalesce(p_payload->>'category','policy'),
+      coalesce(p_payload->>'title','Untitled'),
+      coalesce(p_payload->>'body_html',''),
+      coalesce(p_payload->>'color','#8b5cf6'),
+      coalesce(nullif(p_payload->>'sort_order','')::int,0),
+      coalesce((p_payload->>'is_active')::boolean,true),
+      v_actor
+    );
+  else
+    update rule_board_posts
+    set category = coalesce(p_payload->>'category', category),
+        title = coalesce(p_payload->>'title', title),
+        body_html = coalesce(p_payload->>'body_html', body_html),
+        color = coalesce(p_payload->>'color', color),
+        sort_order = coalesce(nullif(p_payload->>'sort_order','')::int, sort_order),
+        is_active = coalesce((p_payload->>'is_active')::boolean, is_active),
+        updated_at = now()
+    where id = v_id;
+  end if;
+
+  return jsonb_build_object('status','success');
+end $$;
+
+create or replace function public.admin_delete_rule_board(p_token uuid, p_id bigint)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public_session_is_admin(p_token) then return jsonb_build_object('status','error','message','ADMIN_ONLY'); end if;
+  delete from rule_board_posts where id = p_id;
+  return jsonb_build_object('status','success');
+end $$;
+
+grant execute on function public.get_home_dashboard(uuid) to anon, authenticated;
+grant execute on function public.get_my_profile(uuid) to anon, authenticated;
+grant execute on function public.daily_checkin(uuid) to anon, authenticated;
+grant execute on function public.list_news(uuid) to anon, authenticated;
+grant execute on function public.list_missions(uuid) to anon, authenticated;
+grant execute on function public.list_rewards(uuid) to anon, authenticated;
+grant execute on function public.list_ranking(uuid) to anon, authenticated;
+grant execute on function public.list_my_overall_logs(uuid) to anon, authenticated;
+grant execute on function public.read_news(uuid,text) to anon, authenticated;
+grant execute on function public.submit_mission(uuid,text) to anon, authenticated;
+grant execute on function public.redeem_reward(uuid,text) to anon, authenticated;
+grant execute on function public.list_notifications(uuid) to anon, authenticated;
+grant execute on function public.mark_notification_read(uuid,text) to anon, authenticated;
+grant execute on function public.get_admin_dashboard(uuid) to anon, authenticated;
+grant execute on function public.admin_list_users(uuid) to anon, authenticated;
+grant execute on function public.admin_list_news(uuid) to anon, authenticated;
+grant execute on function public.admin_list_missions(uuid) to anon, authenticated;
+grant execute on function public.admin_list_rewards(uuid) to anon, authenticated;
+grant execute on function public.admin_list_ledger(uuid) to anon, authenticated;
+grant execute on function public.admin_list_manager_depts(uuid) to anon, authenticated;
+grant execute on function public.admin_upsert_user(uuid,jsonb) to anon, authenticated;
+grant execute on function public.admin_upsert_news(uuid,jsonb) to anon, authenticated;
+grant execute on function public.admin_upsert_mission(uuid,jsonb) to anon, authenticated;
+grant execute on function public.admin_upsert_reward(uuid,jsonb) to anon, authenticated;
+grant execute on function public.admin_upsert_manager_dept(uuid,jsonb) to anon, authenticated;
+grant execute on function public.admin_save_manager_depts_batch(uuid,jsonb) to anon, authenticated;
+grant execute on function public.admin_delete_user(uuid,text) to anon, authenticated;
+grant execute on function public.admin_delete_news(uuid,text) to anon, authenticated;
+grant execute on function public.admin_delete_mission(uuid,text) to anon, authenticated;
+grant execute on function public.admin_delete_reward(uuid,text) to anon, authenticated;
+grant execute on function public.admin_reset_password(uuid,text,text) to anon, authenticated;
+grant execute on function public.list_calendar_events(uuid) to anon, authenticated;
+grant execute on function public.admin_list_calendar_events(uuid) to anon, authenticated;
+grant execute on function public.admin_upsert_calendar_event(uuid,jsonb) to anon, authenticated;
+grant execute on function public.admin_delete_calendar_event(uuid,bigint) to anon, authenticated;
+grant execute on function public.list_rule_board(uuid) to anon, authenticated;
+grant execute on function public.admin_list_rule_board(uuid) to anon, authenticated;
+grant execute on function public.admin_upsert_rule_board(uuid,jsonb) to anon, authenticated;
+grant execute on function public.admin_delete_rule_board(uuid,bigint) to anon, authenticated;
+
+
+-- =========================================================
+-- 15_QUOTATION_SUPABASE_SCHEMA.sql
+-- =========================================================
+
+-- 15_QUOTATION_SUPABASE_SCHEMA.sql
+-- Production quotation index/analysis schema.
+--
+-- Google Drive remains the binary-file source of truth.  This schema stores
+-- searchable quotation data, calculations, Drive references, and a complete
+-- normalized payload for reconciliation.  The browser must never write these
+-- tables directly: Google Apps Script validates the public session and calls
+-- the service-role-only sync RPC below.
+
+-- ---------------------------------------------------------------------------
+-- Tables
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.quotations (
+  quotation_id text primary key,
+  quotation_no text not null unique,
+  client_request_id text,
+  project_name text not null default '',
+  revision bigint not null default 0,
+  -- Kept as text for compatibility with the legacy Drive payload (max 100
+  -- characters). New UI values remain ISO YYYY-MM-DD.
+  quotation_date text not null default (current_date::text),
+  status text not null default 'DRAFT',
+  currency text not null default 'THB',
+
+  -- Customer values are snapshots.  They intentionally do not reference a
+  -- mutable customer master because a historical quotation must not change.
+  customer_id text,
+  customer_code text,
+  customer_name text not null default '',
+  customer_company text not null default '',
+  customer_branch text not null default '',
+  customer_address text not null default '',
+  customer_phone text not null default '',
+  customer_email text not null default '',
+  customer_tax_id text not null default '',
+  customer_contact_person text not null default '',
+  customer_note text not null default '',
+
+  quotation_note text not null default '',
+  validity_days integer not null default 30,
+  payment_terms text not null default '',
+  delivery_terms text not null default '',
+
+  vat_percent numeric(7,4) not null default 7,
+  subtotal numeric(38,2) not null default 0,
+  vat_amount numeric(38,2) not null default 0,
+  grand_total numeric(38,2) not null default 0,
+  total_proposed_cost numeric(38,2) not null default 0,
+  total_item_cost numeric(38,2) not null default 0,
+  total_cost numeric(38,2) not null default 0,
+  cost_basis text not null default 'ITEM_UNIT_COST',
+  gross_profit numeric(38,2) not null default 0,
+  gp_percent numeric(38,4) not null default 0,
+
+  report_version bigint not null default 1,
+  drive_folder_id text,
+  pdf_file_id text,
+  pdf_url text,
+  xlsx_file_id text,
+  xlsx_url text,
+
+  -- source_version is monotonic per quotation. source_hash is computed by the
+  -- database from payload_json and detects same-version/different-data writes.
+  source_version bigint not null default 1,
+  source_hash text not null,
+  payload_json jsonb not null default '{}'::jsonb,
+  source_created_at timestamptz,
+  source_updated_at timestamptz not null,
+  last_synced_at timestamptz not null default now(),
+
+  created_by_emp_id text not null references public.app_users(emp_id) on delete restrict,
+  created_by_name text not null default '',
+  updated_by_emp_id text references public.app_users(emp_id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  constraint quotations_id_not_blank check (length(btrim(quotation_id)) between 1 and 100),
+  constraint quotations_no_not_blank check (length(btrim(quotation_no)) between 1 and 100),
+  constraint quotations_revision_valid check (revision >= 0),
+  constraint quotations_date_valid check (length(btrim(quotation_date)) between 1 and 100),
+  constraint quotations_status_valid check (
+    status in ('DRAFT','PENDING','SENT','APPROVED','REJECTED','CANCELLED','EXPIRED')
+  ),
+  constraint quotations_currency_valid check (currency ~ '^[A-Z]{3}$'),
+  constraint quotations_validity_days_valid check (validity_days between 0 and 3650),
+  constraint quotations_vat_valid check (vat_percent between 0 and 100),
+  constraint quotations_amounts_nonnegative check (
+    subtotal >= 0 and vat_amount >= 0 and grand_total >= 0
+    and total_proposed_cost >= 0 and total_item_cost >= 0 and total_cost >= 0
+  ),
+  constraint quotations_cost_basis_valid check (cost_basis in ('ITEM_UNIT_COST','SB_COST_NOTES')),
+  constraint quotations_report_version_valid check (report_version >= 1),
+  constraint quotations_source_version_valid check (source_version >= 1),
+  constraint quotations_source_hash_valid check (source_hash ~ '^[0-9a-f]{32}$'),
+  constraint quotations_payload_object check (jsonb_typeof(payload_json) = 'object')
+);
+
+create table if not exists public.quotation_items (
+  id bigint generated by default as identity primary key,
+  quotation_id text not null references public.quotations(quotation_id) on delete cascade,
+  source_item_id text,
+  item_no integer not null,
+  product_id text,
+  product_ref text not null default '',
+  product_name text not null default '',
+  description text not null default '',
+  unit text not null default '',
+  quantity numeric(38,4) not null default 0,
+  unit_price numeric(38,4) not null default 0,
+  amount numeric(38,2) not null default 0,
+  unit_cost numeric(38,4) not null default 0,
+  cost_amount numeric(38,2) not null default 0,
+  remark text not null default '',
+  picture_file_id text,
+  picture_url text,
+  payload_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint quotation_items_line_unique unique (quotation_id, item_no),
+  constraint quotation_items_number_valid check (item_no between 1 and 200),
+  constraint quotation_items_amounts_valid check (
+    quantity >= 0 and unit_price >= 0 and amount >= 0 and unit_cost >= 0 and cost_amount >= 0
+  ),
+  constraint quotation_items_payload_object check (jsonb_typeof(payload_json) = 'object')
+);
+
+create table if not exists public.quotation_cost_notes (
+  id bigint generated by default as identity primary key,
+  quotation_id text not null references public.quotations(quotation_id) on delete cascade,
+  source_cost_note_id text,
+  note_no integer not null,
+  description text not null default '',
+  proposed_cost numeric(38,2) not null default 0,
+  sb_cost numeric(38,2) not null default 0,
+  gp_percent numeric(38,4) not null default 0,
+  note text not null default '',
+  payload_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint quotation_cost_notes_line_unique unique (quotation_id, note_no),
+  constraint quotation_cost_notes_number_valid check (note_no between 1 and 100),
+  constraint quotation_cost_notes_amounts_valid check (proposed_cost >= 0 and sb_cost >= 0),
+  constraint quotation_cost_notes_payload_object check (jsonb_typeof(payload_json) = 'object')
+);
+
+create table if not exists public.quotation_files (
+  id bigint generated by default as identity primary key,
+  quotation_id text not null references public.quotations(quotation_id) on delete cascade,
+  drive_file_id text not null,
+  file_kind text not null,
+  file_name text not null default '',
+  mime_type text not null default '',
+  bucket text not null default '',
+  view_url text not null default '',
+  direct_url text not null default '',
+  registry_source text not null default '',
+  report_version bigint,
+  is_current boolean not null default true,
+  uploaded_by_emp_id text references public.app_users(emp_id) on delete set null,
+  source_created_at timestamptz,
+  payload_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint quotation_files_source_unique unique (quotation_id, drive_file_id, file_kind),
+  constraint quotation_files_id_not_blank check (length(btrim(drive_file_id)) between 1 and 300),
+  constraint quotation_files_kind_not_blank check (length(btrim(file_kind)) between 1 and 100),
+  constraint quotation_files_report_version_valid check (report_version is null or report_version >= 1),
+  constraint quotation_files_payload_object check (jsonb_typeof(payload_json) = 'object')
+);
+
+-- Type normalization makes this migration safe to rerun over an earlier draft
+-- of the quotation schema without dropping data.
+alter table public.quotations alter column quotation_date drop default;
+alter table public.quotations alter column quotation_date type text using quotation_date::text;
+alter table public.quotations alter column quotation_date set default (current_date::text);
+alter table public.quotations alter column revision type bigint using revision::bigint;
+alter table public.quotations alter column report_version type bigint using report_version::bigint;
+alter table public.quotations alter column subtotal type numeric(38,2) using subtotal::numeric(38,2);
+alter table public.quotations alter column vat_amount type numeric(38,2) using vat_amount::numeric(38,2);
+alter table public.quotations alter column grand_total type numeric(38,2) using grand_total::numeric(38,2);
+alter table public.quotations alter column total_proposed_cost type numeric(38,2) using total_proposed_cost::numeric(38,2);
+alter table public.quotations alter column total_item_cost type numeric(38,2) using total_item_cost::numeric(38,2);
+alter table public.quotations alter column total_cost type numeric(38,2) using total_cost::numeric(38,2);
+alter table public.quotations alter column gross_profit type numeric(38,2) using gross_profit::numeric(38,2);
+alter table public.quotations alter column gp_percent type numeric(38,4) using gp_percent::numeric(38,4);
+alter table public.quotation_items alter column quantity type numeric(38,4) using quantity::numeric(38,4);
+alter table public.quotation_items alter column unit_price type numeric(38,4) using unit_price::numeric(38,4);
+alter table public.quotation_items alter column amount type numeric(38,2) using amount::numeric(38,2);
+alter table public.quotation_items alter column unit_cost type numeric(38,4) using unit_cost::numeric(38,4);
+alter table public.quotation_items alter column cost_amount type numeric(38,2) using cost_amount::numeric(38,2);
+alter table public.quotation_cost_notes alter column proposed_cost type numeric(38,2) using proposed_cost::numeric(38,2);
+alter table public.quotation_cost_notes alter column sb_cost type numeric(38,2) using sb_cost::numeric(38,2);
+alter table public.quotation_cost_notes alter column gp_percent type numeric(38,4) using gp_percent::numeric(38,4);
+alter table public.quotation_files alter column report_version type bigint using report_version::bigint;
+
+do $$ begin
+  alter table public.quotations
+    add constraint quotations_date_valid
+    check (length(btrim(quotation_date)) between 1 and 100);
+exception when duplicate_object then null;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Indexes
+-- ---------------------------------------------------------------------------
+
+create unique index if not exists uq_quotations_owner_client_request
+  on public.quotations(created_by_emp_id, client_request_id)
+  where client_request_id is not null and btrim(client_request_id) <> '';
+
+create index if not exists idx_quotations_owner_updated
+  on public.quotations(created_by_emp_id, updated_at desc);
+create index if not exists idx_quotations_status_date
+  on public.quotations(status, quotation_date desc);
+create index if not exists idx_quotations_customer_name
+  on public.quotations(lower(customer_name));
+create index if not exists idx_quotations_customer_company
+  on public.quotations(lower(customer_company));
+create index if not exists idx_quotations_source_sync
+  on public.quotations(source_updated_at desc, last_synced_at desc);
+create index if not exists idx_quotation_items_parent
+  on public.quotation_items(quotation_id, item_no);
+create index if not exists idx_quotation_cost_notes_parent
+  on public.quotation_cost_notes(quotation_id, note_no);
+create index if not exists idx_quotation_files_parent_kind
+  on public.quotation_files(quotation_id, file_kind, is_current);
+create index if not exists idx_quotation_files_drive_id
+  on public.quotation_files(drive_file_id);
+
+-- Reuse the project's canonical updated_at trigger function.
+drop trigger if exists trg_quotations_updated_at on public.quotations;
+create trigger trg_quotations_updated_at
+before update on public.quotations
+for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_quotation_items_updated_at on public.quotation_items;
+create trigger trg_quotation_items_updated_at
+before update on public.quotation_items
+for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_quotation_cost_notes_updated_at on public.quotation_cost_notes;
+create trigger trg_quotation_cost_notes_updated_at
+before update on public.quotation_cost_notes
+for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_quotation_files_updated_at on public.quotation_files;
+create trigger trg_quotation_files_updated_at
+before update on public.quotation_files
+for each row execute function public.set_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- Private parsing helpers used by the service-role sync RPC
+-- ---------------------------------------------------------------------------
+
+create or replace function public.quotation_safe_numeric(p_value text, p_default numeric default 0)
+returns numeric
+language plpgsql
+immutable
+set search_path = public
+as $$
+begin
+  if p_value is null or btrim(p_value) = '' then return p_default; end if;
+  return p_value::numeric;
+exception when invalid_text_representation or numeric_value_out_of_range then
+  return p_default;
+end $$;
+
+create or replace function public.quotation_safe_integer(p_value text, p_default integer default 0)
+returns integer
+language plpgsql
+immutable
+set search_path = public
+as $$
+begin
+  if p_value is null or btrim(p_value) = '' then return p_default; end if;
+  return trunc(p_value::numeric)::integer;
+exception when invalid_text_representation or numeric_value_out_of_range then
+  return p_default;
+end $$;
+
+create or replace function public.quotation_safe_bigint(p_value text, p_default bigint default 0)
+returns bigint
+language plpgsql
+immutable
+set search_path = public
+as $$
+begin
+  if p_value is null or btrim(p_value) = '' then return p_default; end if;
+  return trunc(p_value::numeric)::bigint;
+exception when invalid_text_representation or numeric_value_out_of_range then
+  return p_default;
+end $$;
+
+create or replace function public.quotation_safe_date(p_value text, p_default date default current_date)
+returns date
+language plpgsql
+stable
+set search_path = public
+as $$
+begin
+  if p_value is null or btrim(p_value) = '' then return p_default; end if;
+  return p_value::date;
+exception when invalid_datetime_format or datetime_field_overflow then
+  return p_default;
+end $$;
+
+create or replace function public.quotation_safe_timestamptz(p_value text, p_default timestamptz default now())
+returns timestamptz
+language plpgsql
+stable
+set search_path = public
+as $$
+begin
+  if p_value is null or btrim(p_value) = '' then return p_default; end if;
+  return p_value::timestamptz;
+exception when invalid_datetime_format or datetime_field_overflow then
+  return p_default;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Service-role session validation
+-- ---------------------------------------------------------------------------
+
+create or replace function public.validate_quotation_session_for_service(p_token uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_emp_id text;
+  v_role public.app_role;
+  v_expires_at timestamptz;
+begin
+  select u.emp_id, u.role, s.expires_at
+    into v_emp_id, v_role, v_expires_at
+  from public.public_sessions s
+  join public.app_users u on u.emp_id = s.emp_id
+  where s.session_token = p_token
+    and s.revoked_at is null
+    and s.expires_at > now()
+    and u.status = 'active'
+  limit 1;
+
+  if not found then
+    return jsonb_build_object('status','error','message','SESSION_EXPIRED');
+  end if;
+
+  return jsonb_build_object(
+    'status','success',
+    'emp_id',v_emp_id,
+    'role',lower(v_role::text),
+    'expires_at',v_expires_at
+  );
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Atomic Drive -> Supabase synchronization
+-- ---------------------------------------------------------------------------
+
+create or replace function public.quotation_sync_from_drive_core(
+  p_token uuid,
+  p_quotation jsonb,
+  p_reconcile boolean
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_record jsonb;
+  v_payload jsonb;
+  v_items jsonb;
+  v_cost_notes jsonb;
+  v_files jsonb;
+  v_item jsonb;
+  v_cost_note jsonb;
+  v_file jsonb;
+  v_ordinality bigint;
+  v_emp_id text;
+  v_owner_emp_id text;
+  v_updated_by_emp_id text;
+  v_role public.app_role;
+  v_id text;
+  v_no text;
+  v_status text;
+  v_source_version bigint;
+  v_source_hash text;
+  v_existing public.quotations%rowtype;
+  v_now timestamptz := now();
+  v_subtotal numeric(38,2);
+  v_vat_percent numeric(7,4);
+  v_vat_amount numeric(38,2);
+  v_grand_total numeric(38,2);
+  v_total_proposed_cost numeric(38,2);
+  v_total_item_cost numeric(38,2);
+  v_total_cost numeric(38,2);
+  v_gross_profit numeric(38,2);
+  v_gp_percent numeric(38,4);
+  v_has_sb_cost boolean;
+begin
+  if p_quotation is null or jsonb_typeof(p_quotation) <> 'object' then
+    return jsonb_build_object('status','error','message','INVALID_QUOTATION_ENVELOPE');
+  end if;
+
+  if p_reconcile and p_token is not null then
+    return jsonb_build_object('status','error','message','RECONCILIATION_TOKEN_MUST_BE_NULL');
+  end if;
+  if not p_reconcile and p_token is null then
+    return jsonb_build_object('status','error','message','SESSION_TOKEN_REQUIRED');
+  end if;
+
+  v_record := case
+    when jsonb_typeof(p_quotation->'record') = 'object' then p_quotation->'record'
+    else p_quotation
+  end;
+  v_payload := case
+    when jsonb_typeof(p_quotation->'payload_json') = 'object' then p_quotation->'payload_json'
+    when jsonb_typeof(v_record->'payload_json') = 'object' then v_record->'payload_json'
+    else v_record
+  end;
+  v_items := case
+    when jsonb_typeof(p_quotation->'items') = 'array' then p_quotation->'items'
+    when jsonb_typeof(v_payload->'items') = 'array' then v_payload->'items'
+    when jsonb_typeof(v_payload->'quotation_items') = 'array' then v_payload->'quotation_items'
+    else '[]'::jsonb
+  end;
+  v_cost_notes := case
+    when jsonb_typeof(p_quotation->'cost_notes') = 'array' then p_quotation->'cost_notes'
+    when jsonb_typeof(v_payload->'costNotes') = 'array' then v_payload->'costNotes'
+    when jsonb_typeof(v_payload->'cost_notes') = 'array' then v_payload->'cost_notes'
+    else '[]'::jsonb
+  end;
+  v_files := case
+    when jsonb_typeof(p_quotation->'files') = 'array' then p_quotation->'files'
+    when jsonb_typeof(v_payload->'files') = 'array' then v_payload->'files'
+    else '[]'::jsonb
+  end;
+
+  if jsonb_array_length(v_items) > 200 then
+    return jsonb_build_object('status','error','message','TOO_MANY_QUOTATION_ITEMS');
+  end if;
+  if jsonb_array_length(v_cost_notes) > 100 then
+    return jsonb_build_object('status','error','message','TOO_MANY_QUOTATION_COST_NOTES');
+  end if;
+  -- Apps Script can retain 250 trusted uploads plus generated PDF/XLSX refs.
+  if jsonb_array_length(v_files) > 300 then
+    return jsonb_build_object('status','error','message','TOO_MANY_QUOTATION_FILES');
+  end if;
+
+  v_id := btrim(coalesce(v_record->>'quotation_id', v_record->>'quotationId', v_record->>'id', ''));
+  v_no := btrim(coalesce(v_record->>'quotation_no', v_record->>'quotationNo', ''));
+  v_status := upper(btrim(coalesce(v_record->>'status', 'DRAFT')));
+  v_source_version := public.quotation_safe_bigint(
+    coalesce(v_record->>'source_version', v_record->>'sourceVersion',
+             v_record->>'report_version', v_record->>'reportVersion'), 1
+  );
+  v_source_hash := md5(jsonb_build_object(
+    'record', v_record - 'source_hash' - 'sourceHash',
+    'payload_json', v_payload,
+    'items', v_items,
+    'cost_notes', v_cost_notes,
+    'files', v_files
+  )::text);
+
+  -- Immediate writes carry the original public-session token. A NULL token is
+  -- reserved for the service-role-only time-trigger reconciliation job; that
+  -- path preserves the stored owner (or uses the authoritative Drive owner on
+  -- first import). Browser roles cannot execute this function.
+  if not p_reconcile then
+    select u.emp_id, u.role
+      into v_emp_id, v_role
+    from public.public_sessions s
+    join public.app_users u on u.emp_id = s.emp_id
+    where s.session_token = p_token
+      and s.revoked_at is null
+      and s.expires_at > v_now
+      and u.status = 'active'
+    limit 1;
+
+    if not found then
+      return jsonb_build_object('status','error','message','SESSION_EXPIRED');
+    end if;
+  end if;
+
+  if v_id = '' or length(v_id) > 100 then
+    return jsonb_build_object('status','error','message','INVALID_QUOTATION_ID');
+  end if;
+  if v_no = '' or length(v_no) > 100 then
+    return jsonb_build_object('status','error','message','INVALID_QUOTATION_NO');
+  end if;
+  if v_status not in ('DRAFT','PENDING','SENT','APPROVED','REJECTED','CANCELLED','EXPIRED') then
+    return jsonb_build_object('status','error','message','INVALID_QUOTATION_STATUS');
+  end if;
+  if v_source_version < 1 then
+    return jsonb_build_object('status','error','message','INVALID_SOURCE_VERSION');
+  end if;
+
+  -- Serialize concurrent retries for the same source identity and number.
+  perform pg_advisory_xact_lock(hashtextextended('quotation-id:' || v_id, 0));
+  perform pg_advisory_xact_lock(hashtextextended('quotation-no:' || v_no, 0));
+
+  select * into v_existing
+  from public.quotations
+  where quotation_id = v_id
+  for update;
+
+  if found then
+    if not p_reconcile
+       and v_existing.created_by_emp_id <> v_emp_id
+       and v_role not in ('manager','admin','admin_it','dev') then
+      return jsonb_build_object('status','error','message','QUOTATION_ACCESS_DENIED');
+    end if;
+
+    if v_source_version < v_existing.source_version then
+      return jsonb_build_object(
+        'status','success','action','stale_noop','stale',true,
+        'quotation_id',v_id,'quotation_no',v_existing.quotation_no,
+        'source_version',v_existing.source_version,'source_hash',v_existing.source_hash,
+        'synced_at',v_existing.last_synced_at
+      );
+    end if;
+
+    if v_source_version = v_existing.source_version then
+      if v_source_hash = v_existing.source_hash then
+        return jsonb_build_object(
+          'status','success','action','idempotent_noop','idempotent',true,
+          'quotation_id',v_id,'quotation_no',v_existing.quotation_no,
+          'source_version',v_existing.source_version,'source_hash',v_existing.source_hash,
+          'synced_at',v_existing.last_synced_at
+        );
+      end if;
+      return jsonb_build_object(
+        'status','error','message','VERSION_COLLISION',
+        'quotation_id',v_id,'stored_version',v_existing.source_version,
+        'incoming_version',v_source_version
+      );
+    end if;
+  else
+    if exists(select 1 from public.quotations q where q.quotation_no = v_no) then
+      return jsonb_build_object('status','error','message','QUOTATION_NO_CONFLICT');
+    end if;
+  end if;
+
+  if not p_reconcile then
+    -- User-initiated writes derive ownership and updater identity from the live
+    -- database session. On the first SQL mirror of a legacy Drive row, a
+    -- manager may preserve its canonical owner, but only if that employee
+    -- exists; ordinary users can never assign ownership to somebody else.
+    if v_existing.created_by_emp_id is not null then
+      v_owner_emp_id := v_existing.created_by_emp_id;
+    else
+      v_owner_emp_id := nullif(btrim(coalesce(
+        v_record->>'created_by_emp_id', v_record->>'createdByEmpId', ''
+      )), '');
+      if v_owner_emp_id is null then
+        v_owner_emp_id := v_emp_id;
+      elsif v_owner_emp_id <> v_emp_id then
+        if v_role not in ('manager','admin','admin_it','dev')
+           or not exists(select 1 from public.app_users u where u.emp_id = v_owner_emp_id) then
+          return jsonb_build_object('status','error','message','QUOTATION_OWNER_MISMATCH');
+        end if;
+      end if;
+    end if;
+    v_updated_by_emp_id := v_emp_id;
+  else
+    -- Background reconciliation runs only through service_role. Existing
+    -- ownership is immutable; a first import must name a real app_users row.
+    v_owner_emp_id := coalesce(
+      v_existing.created_by_emp_id,
+      nullif(btrim(coalesce(v_record->>'created_by_emp_id', v_record->>'createdByEmpId', '')), '')
+    );
+    if v_owner_emp_id is null
+       or not exists(select 1 from public.app_users u where u.emp_id = v_owner_emp_id) then
+      return jsonb_build_object('status','error','message','INVALID_RECONCILIATION_OWNER');
+    end if;
+    v_updated_by_emp_id := nullif(btrim(coalesce(
+      v_record->>'updated_by_emp_id', v_record->>'updatedByEmpId', ''
+    )), '');
+    if v_updated_by_emp_id is null
+       or not exists(select 1 from public.app_users u where u.emp_id = v_updated_by_emp_id) then
+      v_updated_by_emp_id := v_owner_emp_id;
+    end if;
+  end if;
+
+  v_vat_percent := least(100, greatest(0, public.quotation_safe_numeric(
+    coalesce(v_record->>'vat_percent', v_record->>'vatPercent', v_payload->>'vat_percent', v_payload->>'vatPercent'), 7
+  )))::numeric(7,4);
+
+  insert into public.quotations (
+    quotation_id, quotation_no, client_request_id, project_name, revision,
+    quotation_date, status, currency,
+    customer_id, customer_code, customer_name, customer_company, customer_branch,
+    customer_address, customer_phone, customer_email, customer_tax_id,
+    customer_contact_person, customer_note,
+    quotation_note, validity_days, payment_terms, delivery_terms, vat_percent,
+    report_version, drive_folder_id, pdf_file_id, pdf_url, xlsx_file_id, xlsx_url,
+    source_version, source_hash, payload_json, source_created_at, source_updated_at,
+    last_synced_at, created_by_emp_id, created_by_name, updated_by_emp_id
+  ) values (
+    v_id, v_no,
+    nullif(btrim(coalesce(v_record->>'client_request_id', v_record->>'clientRequestId', '')), ''),
+    coalesce(v_record->>'project_name', v_record->>'projectName', ''),
+    greatest(0, public.quotation_safe_bigint(v_record->>'revision', 0)),
+    left(coalesce(nullif(btrim(coalesce(v_record->>'quotation_date', v_record->>'quotationDate')), ''), current_date::text), 100),
+    v_status,
+    case
+      when upper(coalesce(nullif(btrim(v_record->>'currency'), ''), 'THB')) ~ '^[A-Z]{3}$'
+        then upper(coalesce(nullif(btrim(v_record->>'currency'), ''), 'THB'))
+      else 'THB'
+    end,
+    nullif(btrim(coalesce(v_record->>'customer_id', v_payload#>>'{customer,id}', '')), ''),
+    nullif(btrim(coalesce(v_record->>'customer_code', v_payload#>>'{customer,code}', '')), ''),
+    coalesce(v_record->>'customer_name', v_payload#>>'{customer,name}', ''),
+    coalesce(v_record->>'customer_company', v_payload#>>'{customer,company}', ''),
+    coalesce(v_record->>'customer_branch', v_payload#>>'{customer,branch}', ''),
+    coalesce(v_record->>'customer_address', v_payload#>>'{customer,address}', ''),
+    coalesce(v_record->>'customer_phone', v_payload#>>'{customer,phone}', ''),
+    coalesce(v_record->>'customer_email', v_payload#>>'{customer,email}', ''),
+    coalesce(v_record->>'customer_tax_id', v_payload#>>'{customer,taxId}', v_payload#>>'{customer,tax_id}', ''),
+    coalesce(v_record->>'customer_contact_person', v_payload#>>'{customer,contactPerson}', v_payload#>>'{customer,contact_person}', ''),
+    coalesce(v_record->>'customer_note', v_payload#>>'{customer,note}', ''),
+    coalesce(v_record->>'quotation_note', v_payload->>'note', ''),
+    least(3650, greatest(0, public.quotation_safe_integer(
+      coalesce(v_record->>'validity_days', v_payload#>>'{terms,validityDays}', v_payload#>>'{terms,validity_days}'), 30
+    ))),
+    coalesce(v_record->>'payment_terms', v_payload#>>'{terms,paymentTerms}', v_payload#>>'{terms,payment_terms}', ''),
+    coalesce(v_record->>'delivery_terms', v_payload#>>'{terms,deliveryTerms}', v_payload#>>'{terms,delivery_terms}', ''),
+    v_vat_percent,
+    greatest(1, public.quotation_safe_bigint(coalesce(v_record->>'report_version', v_record->>'reportVersion'), 1)),
+    nullif(btrim(coalesce(v_record->>'drive_folder_id', '')), ''),
+    nullif(btrim(coalesce(v_record->>'pdf_file_id', v_payload->>'pdfFileId', v_payload->>'pdf_file_id', '')), ''),
+    nullif(btrim(coalesce(v_record->>'pdf_url', v_payload->>'pdfUrl', v_payload->>'pdf_url', '')), ''),
+    nullif(btrim(coalesce(v_record->>'xlsx_file_id', v_payload->>'xlsxFileId', v_payload->>'xlsx_file_id', '')), ''),
+    nullif(btrim(coalesce(v_record->>'xlsx_url', v_payload->>'xlsxUrl', v_payload->>'xlsx_url', '')), ''),
+    v_source_version, v_source_hash, v_payload,
+    public.quotation_safe_timestamptz(
+      coalesce(v_record->>'source_created_at', v_record->>'created_at', v_record->>'createdAt'), v_now
+    ),
+    public.quotation_safe_timestamptz(
+      coalesce(v_record->>'source_updated_at', v_record->>'updated_at', v_record->>'updatedAt'), v_now
+    ),
+    v_now,
+    v_owner_emp_id,
+    coalesce(nullif(v_existing.created_by_name, ''), v_record->>'created_by_name', v_record->>'createdByName', ''),
+    v_updated_by_emp_id
+  )
+  on conflict (quotation_id) do update set
+    quotation_no = excluded.quotation_no,
+    client_request_id = excluded.client_request_id,
+    project_name = excluded.project_name,
+    revision = excluded.revision,
+    quotation_date = excluded.quotation_date,
+    status = excluded.status,
+    currency = excluded.currency,
+    customer_id = excluded.customer_id,
+    customer_code = excluded.customer_code,
+    customer_name = excluded.customer_name,
+    customer_company = excluded.customer_company,
+    customer_branch = excluded.customer_branch,
+    customer_address = excluded.customer_address,
+    customer_phone = excluded.customer_phone,
+    customer_email = excluded.customer_email,
+    customer_tax_id = excluded.customer_tax_id,
+    customer_contact_person = excluded.customer_contact_person,
+    customer_note = excluded.customer_note,
+    quotation_note = excluded.quotation_note,
+    validity_days = excluded.validity_days,
+    payment_terms = excluded.payment_terms,
+    delivery_terms = excluded.delivery_terms,
+    vat_percent = excluded.vat_percent,
+    report_version = excluded.report_version,
+    drive_folder_id = excluded.drive_folder_id,
+    pdf_file_id = excluded.pdf_file_id,
+    pdf_url = excluded.pdf_url,
+    xlsx_file_id = excluded.xlsx_file_id,
+    xlsx_url = excluded.xlsx_url,
+    source_version = excluded.source_version,
+    source_hash = excluded.source_hash,
+    payload_json = excluded.payload_json,
+    source_updated_at = excluded.source_updated_at,
+    last_synced_at = excluded.last_synced_at,
+    updated_by_emp_id = excluded.updated_by_emp_id;
+
+  delete from public.quotation_items where quotation_id = v_id;
+  v_ordinality := 0;
+  for v_item in select value from jsonb_array_elements(v_items)
+  loop
+    v_ordinality := v_ordinality + 1;
+    insert into public.quotation_items (
+      quotation_id, source_item_id, item_no, product_id, product_ref, product_name,
+      description, unit, quantity, unit_price, amount, unit_cost, cost_amount,
+      remark, picture_file_id, picture_url, payload_json
+    ) values (
+      v_id,
+      nullif(btrim(coalesce(v_item->>'id', v_item->>'item_id', '')), ''),
+      v_ordinality::integer,
+      nullif(btrim(coalesce(v_item->>'product_id', v_item->>'productId', '')), ''),
+      coalesce(v_item->>'product_ref', v_item->>'productRef', ''),
+      coalesce(v_item->>'product_name', v_item->>'productName', ''),
+      coalesce(v_item->>'description', ''),
+      coalesce(v_item->>'unit', ''),
+      greatest(0, public.quotation_safe_numeric(coalesce(v_item->>'quantity', v_item->>'qty'), 0)),
+      greatest(0, public.quotation_safe_numeric(coalesce(v_item->>'unit_price', v_item->>'unitPrice'), 0)),
+      round(
+        greatest(0, public.quotation_safe_numeric(coalesce(v_item->>'quantity', v_item->>'qty'), 0))
+        * greatest(0, public.quotation_safe_numeric(coalesce(v_item->>'unit_price', v_item->>'unitPrice'), 0)), 2
+      ),
+      greatest(0, public.quotation_safe_numeric(coalesce(v_item->>'unit_cost', v_item->>'unitCost', v_item->>'cost'), 0)),
+      round(
+        greatest(0, public.quotation_safe_numeric(coalesce(v_item->>'quantity', v_item->>'qty'), 0))
+        * greatest(0, public.quotation_safe_numeric(coalesce(v_item->>'unit_cost', v_item->>'unitCost', v_item->>'cost'), 0)), 2
+      ),
+      coalesce(v_item->>'remark', v_item->>'note', ''),
+      nullif(btrim(coalesce(v_item->>'picture_file_id', v_item->>'pictureFileId', v_item->>'image_file_id', v_item->>'imageFileId', '')), ''),
+      nullif(btrim(coalesce(v_item->>'picture_url', v_item->>'pictureUrl', v_item->>'image_url', v_item->>'imageUrl', '')), ''),
+      v_item
+    );
+  end loop;
+
+  delete from public.quotation_cost_notes where quotation_id = v_id;
+  v_ordinality := 0;
+  for v_cost_note in select value from jsonb_array_elements(v_cost_notes)
+  loop
+    v_ordinality := v_ordinality + 1;
+    insert into public.quotation_cost_notes (
+      quotation_id, source_cost_note_id, note_no, description, proposed_cost,
+      sb_cost, gp_percent, note, payload_json
+    ) values (
+      v_id,
+      nullif(btrim(coalesce(v_cost_note->>'id', v_cost_note->>'cost_note_id', '')), ''),
+      v_ordinality::integer,
+      coalesce(v_cost_note->>'description', ''),
+      greatest(0, round(public.quotation_safe_numeric(
+        coalesce(v_cost_note->>'proposed_cost', v_cost_note->>'proposedCost', v_cost_note->>'pcost'), 0
+      ), 2)),
+      greatest(0, round(public.quotation_safe_numeric(
+        coalesce(v_cost_note->>'sb_cost', v_cost_note->>'sbCost', v_cost_note->>'sbcost'), 0
+      ), 2)),
+      public.quotation_safe_numeric(coalesce(v_cost_note->>'gp_percent', v_cost_note->>'gpPercent'), 0),
+      coalesce(v_cost_note->>'note', v_cost_note->>'remark', ''),
+      v_cost_note
+    );
+  end loop;
+
+  delete from public.quotation_files where quotation_id = v_id;
+  for v_file in select value from jsonb_array_elements(v_files)
+  loop
+    if btrim(coalesce(v_file->>'drive_file_id', v_file->>'file_id', v_file->>'fileId', '')) <> '' then
+      insert into public.quotation_files (
+        quotation_id, drive_file_id, file_kind, file_name, mime_type, bucket,
+        view_url, direct_url, registry_source, report_version, is_current,
+        uploaded_by_emp_id, source_created_at, payload_json
+      ) values (
+        v_id,
+        btrim(coalesce(v_file->>'drive_file_id', v_file->>'file_id', v_file->>'fileId')),
+        coalesce(nullif(btrim(coalesce(v_file->>'file_kind', v_file->>'kind', '')), ''), 'quotation_attachments'),
+        coalesce(v_file->>'file_name', v_file->>'fileName', v_file->>'name', ''),
+        coalesce(v_file->>'mime_type', v_file->>'mimeType', ''),
+        coalesce(v_file->>'bucket', ''),
+        coalesce(v_file->>'view_url', v_file->>'viewUrl', v_file->>'url', ''),
+        coalesce(v_file->>'direct_url', v_file->>'directUrl', v_file->>'download_url', ''),
+        coalesce(v_file->>'registry_source', v_file->>'registrySource', v_file->>'source', ''),
+        nullif(public.quotation_safe_bigint(
+          coalesce(v_file->>'report_version', v_file->>'reportVersion'), 0
+        ), 0),
+        case lower(btrim(coalesce(v_file->>'is_current', v_file->>'isCurrent', 'true')))
+          when 'false' then false when 'f' then false when '0' then false when 'no' then false
+          else true
+        end,
+        v_updated_by_emp_id,
+        public.quotation_safe_timestamptz(
+          coalesce(v_file->>'source_created_at', v_file->>'created_at', v_file->>'createdAt'), v_now
+        ),
+        v_file
+      )
+      on conflict (quotation_id, drive_file_id, file_kind) do update set
+        file_name = excluded.file_name,
+        mime_type = excluded.mime_type,
+        bucket = excluded.bucket,
+        view_url = excluded.view_url,
+        direct_url = excluded.direct_url,
+        registry_source = excluded.registry_source,
+        report_version = excluded.report_version,
+        is_current = excluded.is_current,
+        payload_json = excluded.payload_json,
+        updated_at = v_now;
+    end if;
+  end loop;
+
+  select
+    coalesce(round(sum(i.amount), 2), 0),
+    coalesce(round(sum(i.cost_amount), 2), 0)
+  into v_subtotal, v_total_item_cost
+  from public.quotation_items i
+  where i.quotation_id = v_id;
+
+  select
+    coalesce(round(sum(c.proposed_cost), 2), 0),
+    coalesce(round(sum(c.sb_cost), 2), 0),
+    coalesce(bool_or(c.sb_cost > 0), false)
+  into v_total_proposed_cost, v_total_cost, v_has_sb_cost
+  from public.quotation_cost_notes c
+  where c.quotation_id = v_id;
+
+  if not v_has_sb_cost then v_total_cost := v_total_item_cost; end if;
+  v_vat_amount := round(v_subtotal * v_vat_percent / 100, 2);
+  v_grand_total := round(v_subtotal + v_vat_amount, 2);
+  v_gross_profit := round(v_subtotal - v_total_cost, 2);
+  v_gp_percent := case when v_subtotal = 0 then 0 else round(v_gross_profit / v_subtotal * 100, 2) end;
+
+  update public.quotations
+  set subtotal = v_subtotal,
+      vat_amount = v_vat_amount,
+      grand_total = v_grand_total,
+      total_proposed_cost = v_total_proposed_cost,
+      total_item_cost = v_total_item_cost,
+      total_cost = v_total_cost,
+      cost_basis = case when v_has_sb_cost then 'SB_COST_NOTES' else 'ITEM_UNIT_COST' end,
+      gross_profit = v_gross_profit,
+      gp_percent = v_gp_percent,
+      updated_at = v_now
+  where quotation_id = v_id;
+
+  return jsonb_build_object(
+    'status','success','action',case when v_existing.quotation_id is null then 'inserted' else 'updated' end,
+    'quotation_id',v_id,'quotation_no',v_no,
+    'source_version',v_source_version,'source_hash',v_source_hash,
+    'synced_at',v_now,
+    'totals',jsonb_build_object(
+      'subtotal',v_subtotal,'vat_percent',v_vat_percent,'vat_amount',v_vat_amount,
+      'grand_total',v_grand_total,'total_proposed_cost',v_total_proposed_cost,
+      'total_item_cost',v_total_item_cost,'total_cost',v_total_cost,
+      'gross_profit',v_gross_profit,'gp_percent',v_gp_percent
+    )
+  );
+end $$;
+
+-- User-initiated synchronization. The token is mandatory and ownership comes
+-- only from the current active app_users row behind that token.
+create or replace function public.sync_quotation_from_drive(
+  p_token uuid,
+  p_quotation jsonb
+)
+returns jsonb
+language sql
+security definer
+set search_path = pg_catalog, public
+as $$
+  select public.quotation_sync_from_drive_core(p_token, p_quotation, false)
+$$;
+
+-- Time-trigger reconciliation. This separately named entry point has no user
+-- token and is executable only by service_role. It preserves an existing SQL
+-- owner; first import accepts only an owner that exists in app_users.
+create or replace function public.reconcile_quotation_from_drive(p_quotation jsonb)
+returns jsonb
+language sql
+security definer
+set search_path = pg_catalog, public
+as $$
+  select public.quotation_sync_from_drive_core(null, p_quotation, true)
+$$;
+
+-- ---------------------------------------------------------------------------
+-- RLS defense in depth. There are intentionally zero table policies: all
+-- browser-facing roles use Apps Script, while service_role uses the RPCs.
+-- ---------------------------------------------------------------------------
+
+alter table public.quotations enable row level security;
+alter table public.quotations force row level security;
+alter table public.quotation_items enable row level security;
+alter table public.quotation_items force row level security;
+alter table public.quotation_cost_notes enable row level security;
+alter table public.quotation_cost_notes force row level security;
+alter table public.quotation_files enable row level security;
+alter table public.quotation_files force row level security;
+
+drop policy if exists "quotation owners or managers read" on public.quotations;
+drop policy if exists "quotation owners or managers insert" on public.quotations;
+drop policy if exists "quotation owners or managers update" on public.quotations;
+drop policy if exists "quotation owners or managers delete" on public.quotations;
+drop policy if exists "quotation item access follows parent" on public.quotation_items;
+drop policy if exists "quotation cost access follows parent" on public.quotation_cost_notes;
+drop policy if exists "quotation file access follows parent" on public.quotation_files;
+
+-- Remove helper functions from an earlier draft after their policies are gone.
+drop function if exists public.quotation_auth_can_access(text);
+drop function if exists public.quotation_auth_can_manage_all();
+
+-- No quotation table is callable/readable from the public browser roles.  The
+-- Apps Script service role is the only writer, through sync_quotation_from_drive.
+revoke all on table public.quotations from public, anon, authenticated;
+revoke all on table public.quotation_items from public, anon, authenticated;
+revoke all on table public.quotation_cost_notes from public, anon, authenticated;
+revoke all on table public.quotation_files from public, anon, authenticated;
+revoke all on sequence public.quotation_items_id_seq from public, anon, authenticated;
+revoke all on sequence public.quotation_cost_notes_id_seq from public, anon, authenticated;
+revoke all on sequence public.quotation_files_id_seq from public, anon, authenticated;
+
+grant all on table public.quotations to service_role;
+grant all on table public.quotation_items to service_role;
+grant all on table public.quotation_cost_notes to service_role;
+grant all on table public.quotation_files to service_role;
+grant usage, select on sequence public.quotation_items_id_seq to service_role;
+grant usage, select on sequence public.quotation_cost_notes_id_seq to service_role;
+grant usage, select on sequence public.quotation_files_id_seq to service_role;
+
+revoke all on function public.quotation_safe_numeric(text,numeric) from public, anon, authenticated;
+revoke all on function public.quotation_safe_integer(text,integer) from public, anon, authenticated;
+revoke all on function public.quotation_safe_bigint(text,bigint) from public, anon, authenticated;
+revoke all on function public.quotation_safe_date(text,date) from public, anon, authenticated;
+revoke all on function public.quotation_safe_timestamptz(text,timestamptz) from public, anon, authenticated;
+revoke all on function public.validate_quotation_session_for_service(uuid) from public, anon, authenticated;
+revoke all on function public.sync_quotation_from_drive(uuid,jsonb) from public, anon, authenticated;
+revoke all on function public.reconcile_quotation_from_drive(jsonb) from public, anon, authenticated;
+revoke all on function public.quotation_sync_from_drive_core(uuid,jsonb,boolean) from public, anon, authenticated, service_role;
+
+grant execute on function public.validate_quotation_session_for_service(uuid) to service_role;
+grant execute on function public.sync_quotation_from_drive(uuid,jsonb) to service_role;
+grant execute on function public.reconcile_quotation_from_drive(jsonb) to service_role;
+
+
+-- =========================================================
+-- 16_FRONTEND_RPC_COMPLETION_AND_AUTH_HARDENING.sql
+-- =========================================================
+
+-- Complete the RPC contract used by the React application and harden onboarding.
+-- Run after 15_QUOTATION_SUPABASE_SCHEMA.sql.
+
+begin;
+
+alter table public.missions
+  add column if not exists requires_evidence boolean not null default false,
+  add column if not exists requires_approval boolean not null default false;
+
+alter table public.user_missions
+  add column if not exists reviewed_by_emp_id text references public.app_users(emp_id) on delete set null,
+  add column if not exists reviewed_at timestamptz,
+  add column if not exists review_note text;
+
+insert into public.app_settings(key, value, description, is_public) values
+  ('WELCOME_TITLE', 'SB CONNECT', 'Welcome dialog title', true),
+  ('WELCOME_MESSAGE', 'ยินดีต้อนรับสู่ SB Connect', 'Welcome dialog message', true),
+  ('WELCOME_VIDEO_URL', '', 'Optional welcome video URL', true),
+  ('WELCOME_ENABLED', 'true', 'Enable the welcome dialog', true)
+on conflict (key) do nothing;
+
+create or replace function public.login_with_emp_password(
+  p_emp_id text,
+  p_password text,
+  p_user_agent text default null
+)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare
+  u app_users%rowtype;
+  c user_credentials%rowtype;
+  v_token uuid;
+  v_must_change boolean;
+  v_failed_attempts integer;
+  v_emp_input text := lower(trim(coalesce(p_emp_id,'')));
+begin
+  select count(*) into v_failed_attempts
+  from login_attempt_logs l
+  where lower(coalesce(l.emp_id,'')) = v_emp_input
+    and l.success = false
+    and coalesce(l.reason,'') <> 'RATE_LIMITED'
+    and l.created_at > greatest(
+      now() - interval '15 minutes',
+      coalesce((select max(s.created_at) from login_attempt_logs s
+                where lower(coalesce(s.emp_id,''))=v_emp_input and s.success=true), '-infinity'::timestamptz)
+    );
+
+  if v_failed_attempts >= 5 then
+    insert into login_attempt_logs(emp_id,success,reason,user_agent)
+    values(trim(p_emp_id),false,'RATE_LIMITED',p_user_agent);
+    return jsonb_build_object('status','error','message','เข้าสู่ระบบไม่สำเร็จ กรุณารอ 15 นาทีแล้วลองใหม่');
+  end if;
+
+  select * into u from app_users
+  where lower(emp_id)=v_emp_input and status='active'
+  limit 1;
+  if not found then
+    insert into login_attempt_logs(emp_id,success,reason,user_agent)
+    values(trim(p_emp_id),false,'INVALID_CREDENTIALS',p_user_agent);
+    return jsonb_build_object('status','error','message','รหัสพนักงานหรือรหัสผ่านไม่ถูกต้อง');
+  end if;
+
+  select * into c from user_credentials where emp_id=u.emp_id;
+  if not found then
+    insert into login_attempt_logs(emp_id,success,reason,user_agent)
+    values(u.emp_id,false,'ACCOUNT_NOT_PROVISIONED',p_user_agent);
+    return jsonb_build_object('status','error','message','บัญชียังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแลระบบ');
+  end if;
+
+  if not public.sb_verify_password(coalesce(p_password,''),c.password_hash) then
+    insert into login_attempt_logs(emp_id,success,reason,user_agent)
+    values(u.emp_id,false,'INVALID_CREDENTIALS',p_user_agent);
+    return jsonb_build_object('status','error','message','รหัสพนักงานหรือรหัสผ่านไม่ถูกต้อง');
+  end if;
+
+  v_must_change := coalesce(c.must_change,false) or coalesce(u.force_password_change,false);
+  insert into public_sessions(emp_id,role,user_agent)
+  values(u.emp_id,u.role,p_user_agent)
+  returning session_token into v_token;
+  update app_users set presence='online',updated_at=now() where emp_id=u.emp_id;
+  insert into login_attempt_logs(emp_id,success,reason,user_agent)
+  values(u.emp_id,true,'SUCCESS',p_user_agent);
+
+  return jsonb_build_object(
+    'status','success','token',v_token,'mustChangePassword',v_must_change,
+    'redirectPage',case when u.role in ('admin','admin_it','dev') then 'admin' else 'home' end,
+    'user',jsonb_build_object(
+      'emp_id',u.emp_id,'empId',u.emp_id,'role',u.role,'email',u.email,
+      'full_name',trim(concat_ws(' ',u.name_th,u.surname_th)),
+      'name',trim(concat_ws(' ',u.name_th,u.surname_th)),'nickname',u.nickname_th,
+      'department',u.dept_th,'dept',u.dept_th,'position',u.pos_th,
+      'points',u.points,'avatar_url',u.avatar_url,'avatar',u.avatar_url,
+      'checkInCount',u.check_in_count,'lastCheckIn',u.last_check_in,
+      'mustChangePassword',v_must_change
+    )
+  );
+end $$;
+
+create or replace function public.get_app_welcome(p_token uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if public.public_session_emp_id(p_token) is null then
+    return jsonb_build_object('status','error','message','SESSION_EXPIRED');
+  end if;
+
+  return jsonb_build_object(
+    'status','success',
+    'title',coalesce((select value from app_settings where key='WELCOME_TITLE'),'SB CONNECT'),
+    'message',coalesce((select value from app_settings where key='WELCOME_MESSAGE'),'ยินดีต้อนรับสู่ SB Connect'),
+    'video_url',coalesce((select value from app_settings where key='WELCOME_VIDEO_URL'),''),
+    'is_active',lower(coalesce((select value from app_settings where key='WELCOME_ENABLED'),'true')) in ('true','1','yes','on')
+  );
+end $$;
+
+create or replace function public.list_my_redemptions(p_token uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_emp_id text;
+begin
+  v_emp_id := public.public_session_emp_id(p_token);
+  if v_emp_id is null then return jsonb_build_array(); end if;
+
+  return coalesce((select jsonb_agg(to_jsonb(x)) from (
+    select redemption_id as id, redemption_id, reward_id, reward_name,
+           points_spent, status, redeemed_at, approved_at
+    from reward_redemptions
+    where emp_id = v_emp_id
+    order by redeemed_at desc
+    limit 100
+  ) x),'[]'::jsonb);
+end $$;
+
+create or replace function public.list_missions(p_token uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_emp_id text;
+begin
+  v_emp_id := public.public_session_emp_id(p_token);
+  if v_emp_id is null then return jsonb_build_array(); end if;
+
+  return coalesce((select jsonb_agg(to_jsonb(x)) from (
+    select m.mission_id as id, m.mission_id, m.title, m.description,
+           m.image_url, m.points, m.status, m.requires_evidence,
+           m.requires_approval, um.status as submission_status,
+           coalesce(um.status in ('Completed','Approved'),false) as done,
+           coalesce(um.status = 'Pending',false) as pending,
+           um.evidence_url, um.created_at as submitted_at
+    from missions m
+    left join user_missions um
+      on um.mission_id = m.mission_id and um.emp_id = v_emp_id
+    where m.status = 'active'
+    order by m.created_at desc
+  ) x),'[]'::jsonb);
+end $$;
+
+-- Replace the legacy two-argument RPC instead of leaving an overload that can
+-- make PostgREST function resolution ambiguous when the optional argument is omitted.
+drop function if exists public.submit_mission(uuid,text);
+
+create or replace function public.submit_mission(
+  p_token uuid,
+  p_mission_id text,
+  p_evidence_url text default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_emp_id text;
+  v_mission missions%rowtype;
+  v_submission user_missions%rowtype;
+  v_tx record;
+  v_balance integer;
+  v_pending boolean;
+begin
+  v_emp_id := public.public_session_emp_id(p_token);
+  if v_emp_id is null then return jsonb_build_object('status','error','message','SESSION_EXPIRED'); end if;
+
+  select * into v_mission from missions
+  where mission_id = p_mission_id and status = 'active';
+  if not found then return jsonb_build_object('status','error','message','ไม่พบภารกิจนี้'); end if;
+
+  if v_mission.requires_evidence and coalesce(trim(p_evidence_url),'') = '' then
+    return jsonb_build_object('status','error','message','กรุณาแนบหลักฐานก่อนส่งภารกิจ');
+  end if;
+
+  select * into v_submission from user_missions
+  where emp_id = v_emp_id and mission_id = p_mission_id;
+  if found and v_submission.status in ('Pending','Completed','Approved') then
+    return jsonb_build_object('status','success','message','ส่งภารกิจนี้แล้ว','already',true,'submission_status',v_submission.status);
+  end if;
+
+  v_pending := v_mission.requires_approval;
+  insert into user_missions(emp_id, mission_id, completed_at, status, evidence_url, reviewed_by_emp_id, reviewed_at, review_note)
+  values(v_emp_id, v_mission.mission_id, case when v_pending then null else now() end,
+         case when v_pending then 'Pending' else 'Completed' end, p_evidence_url, null, null, null)
+  on conflict(emp_id, mission_id) do update set
+    completed_at = excluded.completed_at,
+    status = excluded.status,
+    evidence_url = excluded.evidence_url,
+    reviewed_by_emp_id = null,
+    reviewed_at = null,
+    review_note = null,
+    created_at = now();
+
+  if not v_pending and coalesce(v_mission.points,0) > 0
+     and not exists(select 1 from point_transactions where emp_id=v_emp_id and source_type='MISSION' and source_id=v_mission.mission_id) then
+    select * into v_tx from add_point_transaction(
+      v_emp_id,'earn',v_mission.points,'Mission: ' || v_mission.title,
+      'MISSION',v_mission.mission_id,jsonb_build_object('missionId',v_mission.mission_id,'evidenceUrl',p_evidence_url)
+    );
+    v_balance := v_tx.balance_after;
+  end if;
+
+  return jsonb_build_object(
+    'status','success',
+    'message',case when v_pending then 'ส่งภารกิจแล้ว กรุณารอผู้ดูแลอนุมัติ' else 'บันทึกภารกิจสำเร็จ' end,
+    'submission_status',case when v_pending then 'Pending' else 'Completed' end,
+    'points',case when v_pending then 0 else v_mission.points end,
+    'newPoints',coalesce(v_balance,(select points from app_users where emp_id=v_emp_id))
+  );
+end $$;
+
+create or replace function public.admin_list_mission_submissions(p_token uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public.public_session_is_admin(p_token) then return jsonb_build_array(); end if;
+  return coalesce((select jsonb_agg(to_jsonb(x)) from (
+    select um.id, um.created_at as submitted_at, um.emp_id,
+           trim(concat_ws(' ',u.name_th,u.surname_th)) as employee_name,
+           um.mission_id, m.title as mission_title, m.points,
+           um.evidence_url, um.status, um.review_note, um.reviewed_at,
+           um.reviewed_by_emp_id
+    from user_missions um
+    join missions m on m.mission_id = um.mission_id
+    join app_users u on u.emp_id = um.emp_id
+    order by case when um.status='Pending' then 0 else 1 end, um.created_at desc
+    limit 500
+  ) x),'[]'::jsonb);
+end $$;
+
+create or replace function public.admin_review_mission_submission(
+  p_token uuid,
+  p_submission_id bigint,
+  p_decision text,
+  p_note text default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_actor text;
+  v_submission user_missions%rowtype;
+  v_mission missions%rowtype;
+  v_decision text;
+  v_tx record;
+  v_balance integer;
+begin
+  if not public.public_session_is_admin(p_token) then
+    return jsonb_build_object('status','error','message','ADMIN_ONLY');
+  end if;
+  v_actor := public.public_session_emp_id(p_token);
+  v_decision := initcap(lower(trim(coalesce(p_decision,''))));
+  if v_decision not in ('Approved','Rejected') then
+    return jsonb_build_object('status','error','message','INVALID_DECISION');
+  end if;
+
+  select * into v_submission from user_missions where id=p_submission_id for update;
+  if not found then return jsonb_build_object('status','error','message','SUBMISSION_NOT_FOUND'); end if;
+  select * into v_mission from missions where mission_id=v_submission.mission_id;
+
+  if v_decision='Approved' and v_submission.status not in ('Approved','Completed')
+     and coalesce(v_mission.points,0) > 0
+     and not exists(select 1 from point_transactions where emp_id=v_submission.emp_id and source_type='MISSION' and source_id=v_submission.mission_id) then
+    select * into v_tx from add_point_transaction(
+      v_submission.emp_id,'earn',v_mission.points,'Mission approved: ' || v_mission.title,
+      'MISSION',v_submission.mission_id,jsonb_build_object('submissionId',p_submission_id,'approvedBy',v_actor)
+    );
+    v_balance := v_tx.balance_after;
+  end if;
+
+  update user_missions set
+    status = case when v_decision='Approved' then 'Completed' else 'Rejected' end,
+    completed_at = case when v_decision='Approved' then coalesce(completed_at,now()) else completed_at end,
+    reviewed_by_emp_id = v_actor,
+    reviewed_at = now(),
+    review_note = nullif(trim(p_note),'')
+  where id=p_submission_id;
+
+  insert into admin_audit_logs(actor_emp_id,action,target_table,target_id,after_data)
+  values(v_actor,'REVIEW_MISSION_SUBMISSION','user_missions',p_submission_id::text,
+         jsonb_build_object('decision',v_decision,'note',p_note,'employee',v_submission.emp_id));
+
+  return jsonb_build_object('status','success','decision',v_decision,'balance_after',coalesce(v_balance,(select points from app_users where emp_id=v_submission.emp_id)));
+end $$;
+
+create or replace function public.admin_list_reward_redemptions(p_token uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public.public_session_is_admin(p_token) then return jsonb_build_array(); end if;
+  return coalesce((select jsonb_agg(to_jsonb(x)) from (
+    select rr.redemption_id as id, rr.redemption_id, rr.redeemed_at, rr.emp_id,
+           trim(concat_ws(' ',u.name_th,u.surname_th)) as employee_name,
+           rr.reward_id, rr.reward_name, rr.points_spent, rr.status,
+           rr.approved_by_emp_id, rr.approved_at
+    from reward_redemptions rr
+    join app_users u on u.emp_id=rr.emp_id
+    order by case when rr.status='Pending' then 0 else 1 end, rr.redeemed_at desc
+    limit 500
+  ) x),'[]'::jsonb);
+end $$;
+
+create or replace function public.admin_update_reward_redemption(
+  p_token uuid,
+  p_redemption_id text,
+  p_status text,
+  p_note text default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_actor text; v_status text; v_redemption reward_redemptions%rowtype; v_tx record; v_balance integer;
+begin
+  if not public.public_session_is_admin(p_token) then
+    return jsonb_build_object('status','error','message','ADMIN_ONLY');
+  end if;
+  v_actor := public.public_session_emp_id(p_token);
+  v_status := initcap(lower(trim(coalesce(p_status,''))));
+  if v_status not in ('Pending','Approved','Delivered','Cancelled') then
+    return jsonb_build_object('status','error','message','INVALID_REDEMPTION_STATUS');
+  end if;
+
+  select * into v_redemption from reward_redemptions where redemption_id=p_redemption_id for update;
+  if not found then return jsonb_build_object('status','error','message','REDEMPTION_NOT_FOUND'); end if;
+
+  if v_status='Cancelled' and v_redemption.status <> 'Cancelled' and v_redemption.points_spent > 0
+     and not exists(select 1 from point_transactions where emp_id=v_redemption.emp_id and source_type='REWARD_REFUND' and source_id=v_redemption.redemption_id) then
+    select * into v_tx from add_point_transaction(
+      v_redemption.emp_id,'refund',v_redemption.points_spent,
+      'Reward redemption cancelled: ' || coalesce(v_redemption.reward_name,''),
+      'REWARD_REFUND',v_redemption.redemption_id,jsonb_build_object('cancelledBy',v_actor,'note',p_note)
+    );
+    v_balance := v_tx.balance_after;
+    if v_redemption.reward_id is not null then
+      update rewards set stock=stock+1, updated_at=now() where reward_id=v_redemption.reward_id;
+    end if;
+  end if;
+
+  update reward_redemptions set
+    status=v_status,
+    approved_by_emp_id=case when v_status in ('Approved','Delivered') then v_actor else approved_by_emp_id end,
+    approved_at=case when v_status in ('Approved','Delivered') then coalesce(approved_at,now()) else approved_at end,
+    metadata=coalesce(metadata,'{}'::jsonb) || jsonb_build_object('last_note',coalesce(p_note,''),'updated_by',v_actor,'updated_at',now())
+  where redemption_id=p_redemption_id;
+
+  insert into admin_audit_logs(actor_emp_id,action,target_table,target_id,before_data,after_data)
+  values(v_actor,'UPDATE_REDEMPTION_STATUS','reward_redemptions',p_redemption_id,
+         jsonb_build_object('status',v_redemption.status),jsonb_build_object('status',v_status,'note',p_note));
+
+  return jsonb_build_object('status','success','redemption_id',p_redemption_id,'new_status',v_status,'balance_after',coalesce(v_balance,(select points from app_users where emp_id=v_redemption.emp_id)));
+end $$;
+
+create or replace function public.admin_upsert_user(p_token uuid, p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare v_actor text; v_emp_id text; v_is_new boolean; v_temp_password text;
+begin
+  if not public.public_session_is_admin(p_token) then return jsonb_build_object('status','error','message','ADMIN_ONLY'); end if;
+  v_actor := public.public_session_emp_id(p_token);
+  v_emp_id := trim(coalesce(p_payload->>'emp_id',''));
+  if v_emp_id='' then return jsonb_build_object('status','error','message','EMP_ID_REQUIRED'); end if;
+  select not exists(select 1 from app_users where emp_id=v_emp_id) into v_is_new;
+
+  insert into app_users(emp_id,name_th,dept_th,pos_th,role,status,force_password_change,password_policy)
+  values(
+    v_emp_id,p_payload->>'full_name',p_payload->>'department',p_payload->>'position',
+    coalesce(nullif(p_payload->>'role',''),'user')::app_role,
+    case when upper(coalesce(p_payload->>'status','ACTIVE'))='INACTIVE' then 'inactive'::user_status else 'active'::user_status end,
+    true,'8-char-no-thai'
+  )
+  on conflict(emp_id) do update set
+    name_th=excluded.name_th,dept_th=excluded.dept_th,pos_th=excluded.pos_th,
+    role=excluded.role,status=excluded.status,updated_at=now();
+
+  if v_is_new then
+    v_temp_password := coalesce(nullif(trim(p_payload->>'temp_password'),''),v_emp_id);
+    if not public.sb_is_valid_password(v_temp_password) then
+      raise exception using message='Temporary password must contain exactly 8 English letters or numbers';
+    end if;
+    insert into user_credentials(emp_id,password_hash,must_change,reset_at,reset_by_emp_id)
+    values(v_emp_id,public.sb_hash_password(v_temp_password),true,now(),v_actor)
+    on conflict(emp_id) do update set password_hash=excluded.password_hash,must_change=true,reset_at=now(),reset_by_emp_id=v_actor;
+  end if;
+
+  insert into admin_audit_logs(actor_emp_id,action,target_table,target_id,after_data)
+  values(v_actor,case when v_is_new then 'CREATE_USER' else 'UPDATE_USER' end,'app_users',v_emp_id,
+         jsonb_build_object('role',p_payload->>'role','status',p_payload->>'status'));
+  return jsonb_build_object('status','success','id',v_emp_id,'created',v_is_new);
+end $$;
+
+create or replace function public.admin_upsert_mission(p_token uuid, p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_result jsonb; v_id text;
+begin
+  v_result := public.admin_save_mission(
+    p_token,p_payload->>'id',coalesce(p_payload->>'title',p_payload->>'topic'),
+    p_payload->>'description',coalesce((p_payload->>'points')::int,0),
+    nullif(p_payload->>'image_url',''),
+    case when coalesce((p_payload->>'is_active')::boolean,true) then 'active'::content_status else 'inactive'::content_status end
+  );
+  if v_result->>'status' <> 'success' then return v_result; end if;
+  v_id := v_result->>'id';
+  update missions set
+    requires_evidence=coalesce((p_payload->>'requires_evidence')::boolean,false),
+    requires_approval=coalesce((p_payload->>'requires_approval')::boolean,false),
+    updated_at=now()
+  where mission_id=v_id;
+  return v_result;
+end $$;
+
+-- Public onboarding without a pre-provisioned credential is intentionally disabled.
+revoke all on function public.setup_first_password_no_credential(text,text,text) from public, anon, authenticated;
+revoke all on function public.prepare_first_login_credentials(text) from public, anon, authenticated;
+
+grant execute on function public.login_with_emp_password(text,text,text) to anon, authenticated;
+grant execute on function public.get_app_welcome(uuid) to anon, authenticated;
+grant execute on function public.list_my_redemptions(uuid) to anon, authenticated;
+grant execute on function public.list_missions(uuid) to anon, authenticated;
+grant execute on function public.submit_mission(uuid,text,text) to anon, authenticated;
+grant execute on function public.admin_list_mission_submissions(uuid) to anon, authenticated;
+grant execute on function public.admin_review_mission_submission(uuid,bigint,text,text) to anon, authenticated;
+grant execute on function public.admin_list_reward_redemptions(uuid) to anon, authenticated;
+grant execute on function public.admin_update_reward_redemption(uuid,text,text,text) to anon, authenticated;
+grant execute on function public.admin_upsert_user(uuid,jsonb) to anon, authenticated;
+grant execute on function public.admin_upsert_mission(uuid,jsonb) to anon, authenticated;
+
+commit;

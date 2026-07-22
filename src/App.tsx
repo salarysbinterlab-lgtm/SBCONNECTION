@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { LockKeyhole, LogIn, UserRound, X } from 'lucide-react';
-import { rpc, setSession, getTempPassword, getToken, getCurrentUser, isSupabaseConfigured } from './helpers/api';
+import { rpc, setSession, clearSession, clearTempPassword, getTempPassword, getToken, getCurrentUser, isSupabaseConfigured } from './helpers/api';
 import UserDashboard from './components/UserDashboard';
 import AdminDashboard from './components/AdminDashboard';
 
@@ -164,12 +164,35 @@ export default function App() {
 
   // Session Check on Load
   useEffect(() => {
+    let cancelled = false;
     const token = getToken();
-    const user = getCurrentUser();
-    if (token && user?.emp_id) {
+    const cachedUser = getCurrentUser();
+
+    if (!token || !cachedUser?.emp_id) return;
+    if (!isSupabaseConfigured()) {
       setIsLoggedIn(true);
-      setCurrentUser(user);
+      setCurrentUser(cachedUser);
+      return;
     }
+
+    rpc<any>('validate_public_session', { p_token: token })
+      .then((result) => {
+        if (cancelled) return;
+        if (result?.status !== 'success' || !result?.user) throw new Error(result?.message || 'SESSION_EXPIRED');
+        setSession(token, result.user);
+        setCurrentUser(result.user);
+        setIsLoggedIn(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        clearSession();
+        setCurrentUser(null);
+        setIsLoggedIn(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Handle Login submission
@@ -252,7 +275,11 @@ export default function App() {
         p_user_agent: navigator.userAgent,
       });
 
-      if ((res.status === 'success' && res.mustChangePassword) || res.status === 'first_setup_required') {
+      if (res.status === 'first_setup_required') {
+        throw new Error('บัญชียังไม่มีรหัสผ่านชั่วคราว กรุณาติดต่อผู้ดูแลระบบ');
+      }
+
+      if (res.status === 'success' && res.mustChangePassword) {
         if (res.token && res.user) {
           setSession(res.token, res.user, passVal);
           setCurrentUser(res.user);
@@ -340,31 +367,13 @@ export default function App() {
           p_confirm_password: newPass2,
         });
 
-        const user = getCurrentUser();
+        clearTempPassword();
         setIsLoggedIn(true);
         setShowFirstLogin(false);
         return;
       }
 
-      // If token not yet present, perform setup first
-      await rpc('setup_first_password_no_credential', {
-        p_emp_id: targetEmp,
-        p_new_password: newPass1,
-        p_confirm_password: newPass2,
-      });
-
-      const res = await rpc<LoginResult>('login_with_emp_password', {
-        p_emp_id: targetEmp,
-        p_password: newPass1,
-        p_user_agent: navigator.userAgent,
-      });
-
-      if (!res.token || !res.user) throw new Error('ไม่พบ session token หลังตั้งรหัส');
-
-      setSession(res.token, res.user, newPass1);
-      setCurrentUser(res.user);
-      setIsLoggedIn(true);
-      setShowFirstLogin(false);
+      throw new Error('SESSION_EXPIRED กรุณาเข้าสู่ระบบใหม่');
     } catch (error) {
       showError(error);
     }

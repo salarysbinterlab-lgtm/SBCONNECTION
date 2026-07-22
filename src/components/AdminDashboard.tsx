@@ -3,9 +3,9 @@ import {
   Users, Newspaper, Award, ShoppingBag, History, Network, LogOut,
   Search, Plus, RefreshCw, PieChart, Key, ShieldCheck, Menu, X,
   Trophy, CalendarDays, ChevronLeft, ChevronRight, Globe, Check, Edit2, Trash2, ArrowUpDown,
-  BookOpen, Palette
+  BookOpen, Palette, Upload, ClipboardCheck, PackageCheck
 } from 'lucide-react';
-import { rpc, logout, getCurrentUser } from '../helpers/api';
+import { rpc, logout, getCurrentUser, uploadDriveFile } from '../helpers/api';
 import AppLoader from './AppLoader';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13,8 +13,12 @@ import AppLoader from './AppLoader';
 // ─────────────────────────────────────────────────────────────────────────────
 type Lang = 'th' | 'en';
 type ThemeColor = 'mint' | 'ocean' | 'sunset' | 'lavender';
-type ModuleType = 'dashboard' | 'users' | 'news' | 'missions' | 'rewards' | 'special_points' | 'ledger' | 'activity' | 'manager_depts' | 'calendar' | 'rules';
+type ModuleType = 'dashboard' | 'users' | 'news' | 'missions' | 'mission_submissions' | 'rewards' | 'redemptions' | 'special_points' | 'ledger' | 'activity' | 'manager_depts' | 'calendar' | 'rules';
 type CalendarEventType = 'holiday' | 'event' | 'note';
+type AdminDashboardProps = {
+  user: any;
+  onLogout: () => void;
+};
 
 const TRANS: Record<Lang, Record<string, string>> = {
   th: {
@@ -162,6 +166,7 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
   const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
   const [calEventLabel, setCalEventLabel] = useState('');
+  const [selectedCalendarEventId, setSelectedCalendarEventId] = useState<number | null>(null);
   const [calEventType, setCalEventType] = useState<CalendarEventType>('holiday');
   const [calEventColor, setCalEventColor] = useState('#ef4444');
   const [calEventModalOpen, setCalEventModalOpen] = useState(false);
@@ -184,7 +189,7 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
   useEffect(() => {
     const handleHash = () => {
       const hash = window.location.hash.replace('#', '');
-      const validModules: ModuleType[] = ['users', 'news', 'missions', 'rewards', 'ledger', 'manager_depts', 'calendar', 'rules'];
+      const validModules: ModuleType[] = ['users', 'news', 'missions', 'mission_submissions', 'rewards', 'redemptions', 'special_points', 'ledger', 'activity', 'manager_depts', 'calendar', 'rules'];
       if (validModules.includes(hash as any)) {
         setActiveModule(hash as any);
       } else if (hash === 'admin' || hash === 'homeAdmin') {
@@ -256,6 +261,11 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
         title: 'Missions Management',
         columns: ['id', 'title', 'points', 'is_active', 'created_at']
       },
+      mission_submissions: {
+        list: 'admin_list_mission_submissions',
+        title: 'Mission Submission Review',
+        columns: ['submitted_at', 'emp_id', 'employee_name', 'mission_title', 'evidence_url', 'status']
+      },
       rewards: {
         list: 'admin_list_rewards',
         save: 'admin_upsert_reward',
@@ -267,6 +277,11 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
         list: 'admin_list_special_point_logs',
         title: 'Special Point Adjustments',
         columns: ['created_at', 'admin_emp_id', 'hr_emp_id', 'target_emp_id', 'points', 'balance_after', 'description']
+      },
+      redemptions: {
+        list: 'admin_list_reward_redemptions',
+        title: 'Reward Fulfillment',
+        columns: ['redeemed_at', 'redemption_id', 'emp_id', 'employee_name', 'reward_name', 'points_spent', 'status']
       },
       ledger: {
         list: 'admin_list_ledger',
@@ -358,7 +373,7 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
 
   // Upsert / Edit Actions
   const handleOpenForm = (row: any = null) => {
-    setEditingRow(row ? { ...row } : {});
+    setEditingRow(row ? { ...row, _isNew: false } : { _isNew: true, status: 'ACTIVE', role: 'user' });
     setModalOpen(true);
   };
 
@@ -385,6 +400,8 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
           image_url: editingRow.image_url || editingRow.cover_url || '',
           cover_url: editingRow.image_url || editingRow.cover_url || '',
           publish_date: editingRow.publish_date || undefined,
+          requires_approval: Boolean(editingRow.requires_approval),
+          requires_evidence: Boolean(editingRow.requires_evidence),
           stock: editingRow.stock !== undefined && editingRow.stock !== null ? Number(editingRow.stock) : null,
           is_active: editingRow.is_active !== false
         };
@@ -394,8 +411,10 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
           emp_id: editingRow.emp_id,
           full_name: editingRow.full_name,
           department: editingRow.department,
+          position: editingRow.position || '',
           role: editingRow.role || 'user',
-          status: editingRow.status || 'ACTIVE'
+          status: editingRow.status || 'ACTIVE',
+          temp_password: editingRow._isNew ? editingRow.temp_password : undefined
         };
       } else if (activeModule === 'manager_depts') {
         payload = {
@@ -456,6 +475,62 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
       await rpc(config.delete, keyArg);
       showSuccess(lang === 'th' ? 'ลบข้อมูลเรียบร้อยแล้ว!' : 'Deleted successfully!');
       fetchData();
+    } catch (err) {
+      showError(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMissionReview = async (row: any, decision: 'Approved' | 'Rejected') => {
+    if (decision === 'Rejected' && !confirm(lang === 'th' ? 'ยืนยันการปฏิเสธภารกิจนี้?' : 'Reject this mission submission?')) return;
+    setLoading(true);
+    try {
+      await rpc('admin_review_mission_submission', {
+        p_token: token,
+        p_submission_id: Number(row.id),
+        p_decision: decision,
+        p_note: '',
+      });
+      showSuccess(lang === 'th' ? 'อัปเดตสถานะภารกิจเรียบร้อยแล้ว' : 'Mission status updated.');
+      fetchData();
+    } catch (err) {
+      showError(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRedemptionStatus = async (row: any, status: string) => {
+    if (status === row.status) return;
+    if ((status === 'Cancelled' || status === 'Delivered') && !confirm(
+      lang === 'th' ? `ยืนยันการเปลี่ยนสถานะเป็น ${status}?` : `Change status to ${status}?`
+    )) return;
+    setLoading(true);
+    try {
+      await rpc('admin_update_reward_redemption', {
+        p_token: token,
+        p_redemption_id: row.redemption_id || row.id,
+        p_status: status,
+        p_note: '',
+      });
+      showSuccess(lang === 'th' ? 'อัปเดตสถานะการแลกรางวัลเรียบร้อยแล้ว' : 'Redemption status updated.');
+      fetchData();
+    } catch (err) {
+      showError(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleContentImageUpload = async (file?: File) => {
+    if (!file || !['news', 'missions', 'rewards'].includes(activeModule)) return;
+    setLoading(true);
+    try {
+      const bucket = activeModule === 'news' ? 'news' : activeModule === 'missions' ? 'missions' : 'rewards';
+      const uploaded = await uploadDriveFile(file, bucket, { module: activeModule, ref_id: editingRow?.id || '' });
+      setEditingRow((current: any) => ({ ...current, image_url: uploaded.directUrl, cover_url: uploaded.directUrl }));
+      showSuccess(lang === 'th' ? 'อัปโหลดรูปภาพเรียบร้อยแล้ว' : 'Image uploaded.');
     } catch (err) {
       showError(err);
     } finally {
@@ -528,6 +603,7 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
   // ── Interactive calendar notes actions ────────────────────────────────
   const handleCalendarCellClick = (dateStr: string) => {
     const existing = calendarEvents.find(e => e.date === dateStr);
+    setSelectedCalendarEventId(existing?.id ? Number(existing.id) : null);
     setSelectedCalendarDate(dateStr);
     if (existing) {
       setCalEventLabel(existing.label || '');
@@ -545,7 +621,7 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
     if (!selectedCalendarDate) return;
     setLoading(true);
     try {
-      const existing = calendarEvents.find(e => e.date === selectedCalendarDate);
+      const existing = calendarEvents.find(e => Number(e.id) === selectedCalendarEventId);
       const payload = {
         id: existing?.id || undefined,
         date: selectedCalendarDate,
@@ -567,7 +643,7 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
 
   const handleDeleteCalendarEvent = async () => {
     if (!selectedCalendarDate) return;
-    const existing = calendarEvents.find(e => e.date === selectedCalendarDate);
+    const existing = calendarEvents.find(e => Number(e.id) === selectedCalendarEventId);
     if (!existing) return;
 
     if (!confirm(lang === 'th' ? 'ลบบันทึกวันหยุด/กิจกรรมนี้?' : 'Delete this calendar event?')) return;
@@ -604,11 +680,17 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
     } catch { return dateStr; }
   };
 
+  const localDateKey = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
   // Calendar dates helpers
   const getDaysInMonth = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
   const getFirstDayMon = (y: number, m: number) => { const d = new Date(y, m, 1).getDay(); return d === 0 ? 6 : d - 1; };
-  const eventMap: Record<string, any> = {};
-  calendarEvents.forEach(ev => { if (ev.date) eventMap[ev.date] = ev; });
+  const eventsByDate: Record<string, any[]> = {};
+  calendarEvents.forEach(ev => {
+    if (!ev.date) return;
+    if (!eventsByDate[ev.date]) eventsByDate[ev.date] = [];
+    eventsByDate[ev.date].push(ev);
+  });
+  const eventMap: Record<string, any> = Object.fromEntries(Object.entries(eventsByDate).map(([date, events]) => [date, events[0]]));
 
   // Filtering & Search
   const filteredRows = moduleRows.filter(row => {
@@ -647,7 +729,9 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
     { id: 'missions',      label: t('missions'),      icon: <Award size={17} />, color: '#8b5cf6' },
     { id: 'rewards',       label: t('rewards'),       icon: <ShoppingBag size={17} />, color: '#f59e0b' },
     { id: 'special_points',label: t('special_points'),icon: <Plus size={17} />, color: '#10b981' },
+    { id: 'mission_submissions', label: lang === 'th' ? 'ตรวจภารกิจ' : 'Mission Review', icon: <ClipboardCheck size={17} />, color: '#7c3aed' },
     { id: 'ledger',        label: t('ledger'),        icon: <History size={17} />, color: '#64748b' },
+    { id: 'redemptions',    label: lang === 'th' ? 'จัดการการแลกรางวัล' : 'Reward Fulfillment', icon: <PackageCheck size={17} />, color: '#d97706' },
     { id: 'activity',      label: t('activity'),      icon: <ShieldCheck size={17} />, color: '#0f766e' },
     { id: 'manager_depts', label: t('manager_depts'), icon: <Network size={17} />, color: '#22c55e' },
     { id: 'calendar',      label: t('calendar'),      icon: <CalendarDays size={17} />, color: '#ef4444' },
@@ -862,7 +946,7 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
                         <input
                           type="color"
                           value={cardTheme[key]}
-                          onChange={e => setCardTheme(prev => ({ ...prev, [key]: e.target.value }))}
+                          onChange={e => setCardTheme((prev: typeof DEFAULT_CARD_COLORS) => ({ ...prev, [key]: e.target.value }))}
                           className="w-10 h-10 rounded-xl bg-transparent border-0 p-0 cursor-pointer shrink-0"
                         />
                         <div className="min-w-0">
@@ -1178,7 +1262,7 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
               </div>
             )}
 
-            {['news', 'missions', 'rewards', 'ledger', 'activity', 'rules'].includes(activeModule) && (
+            {['news', 'missions', 'mission_submissions', 'rewards', 'redemptions', 'ledger', 'activity', 'rules'].includes(activeModule) && (
               <div className="space-y-4 animate-fade-in">
                 {activeModule === 'rules' && (
                   <section className="rounded-3xl p-5 border shadow-sm" style={cardStyle}>
@@ -1207,7 +1291,7 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
                           {getModuleConfig(activeModule).columns.map((h, i) => (
                             <th key={i} className="px-4 py-3 text-[10px] font-black uppercase tracking-wider opacity-55">{h}</th>
                           ))}
-                          {getModuleConfig(activeModule).save && (
+                          {(getModuleConfig(activeModule).save || ['mission_submissions', 'redemptions'].includes(activeModule)) && (
                             <th className="px-4 py-3 text-[10px] font-black uppercase tracking-wider opacity-55">Actions</th>
                           )}
                         </tr>
@@ -1237,19 +1321,42 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
                                   </td>
                                 );
                               }
-                              if (col === 'created_at' || col === 'publish_date' || col === 'updated_at') {
+                              if (['created_at', 'publish_date', 'updated_at', 'submitted_at', 'redeemed_at'].includes(col)) {
                                 return <td key={i} className="px-4 py-3 text-[10px] opacity-45 font-bold">{formatDate(val)}</td>;
+                              }
+                              if (col === 'evidence_url' && val) {
+                                return <td key={i} className="px-4 py-3 text-xs">
+                                  <a href={String(val)} target="_blank" rel="noreferrer" className="font-black underline" style={{ color: thm.primary }}>View</a>
+                                </td>;
                               }
                               return <td key={i} className="px-4 py-3 text-xs font-bold">{String(val !== null && val !== undefined ? val : '-')}</td>;
                             })}
-                            {getModuleConfig(activeModule).save && (
+                            {(getModuleConfig(activeModule).save || ['mission_submissions', 'redemptions'].includes(activeModule)) && (
                               <td className="px-4 py-3 text-xs space-x-1.5 flex">
-                                <button onClick={() => handleOpenForm(row)} className="p-1 rounded-md border text-slate-500 hover:text-emerald-500">
-                                  <Edit2 size={12} />
-                                </button>
-                                <button onClick={() => handleDeleteItem(row)} className="p-1 rounded-md border text-red-400 hover:text-red-600">
-                                  <Trash2 size={12} />
-                                </button>
+                                {getModuleConfig(activeModule).save && <>
+                                  <button onClick={() => handleOpenForm(row)} className="p-1 rounded-md border text-slate-500 hover:text-emerald-500">
+                                    <Edit2 size={12} />
+                                  </button>
+                                  <button onClick={() => handleDeleteItem(row)} className="p-1 rounded-md border text-red-400 hover:text-red-600">
+                                    <Trash2 size={12} />
+                                  </button>
+                                </>}
+                                {activeModule === 'mission_submissions' && String(row.status).toLowerCase() === 'pending' && <>
+                                  <button onClick={() => handleMissionReview(row, 'Approved')}
+                                    className="px-2 py-1 rounded-lg bg-emerald-600 text-white font-black">Approve</button>
+                                  <button onClick={() => handleMissionReview(row, 'Rejected')}
+                                    className="px-2 py-1 rounded-lg bg-red-600 text-white font-black">Reject</button>
+                                </>}
+                                {activeModule === 'redemptions' && (
+                                  <select value={row.status || 'Pending'} onChange={e => handleRedemptionStatus(row, e.target.value)}
+                                    className="rounded-xl border px-2 py-1 text-xs font-bold bg-transparent" style={{ borderColor: thm.border }}>
+                                    <option value="Pending">Pending</option>
+                                    <option value="Approved">Approved</option>
+                                    <option value="Ready">Ready</option>
+                                    <option value="Delivered">Delivered</option>
+                                    <option value="Cancelled">Cancelled</option>
+                                  </select>
+                                )}
                               </td>
                             )}
                           </tr>
@@ -1396,7 +1503,7 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
                       const dateStr = `${calMonth.getFullYear()}-${String(calMonth.getMonth()+1).padStart(2,'0')}-${String(dayNum).padStart(2,'0')}`;
                       const evt = eventMap[dateStr];
                       const evtColor = calendarColorFor(evt);
-                      const today = new Date().toISOString().split('T')[0];
+                      const today = localDateKey();
                       const isToday = dateStr === today;
 
                       let bg = 'transparent', clr = darkMode ? '#64748b' : '#94a3b8', bdr = 'transparent';
@@ -1415,7 +1522,7 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
                           {evt && (
                             <span className="text-[9px] font-black px-1.5 py-0.5 rounded-lg text-white truncate max-w-full text-center block mt-1"
                               style={{ background: evtColor }}>
-                              {evt.label}
+                              {evt.label}{(eventsByDate[dateStr]?.length || 0) > 1 ? ` +${eventsByDate[dateStr].length - 1}` : ''}
                             </span>
                           )}
                         </div>
@@ -1449,6 +1556,33 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
               </div>
 
               <div>
+              {selectedCalendarDate && (eventsByDate[selectedCalendarDate]?.length || 0) > 0 && (
+                <div className="rounded-2xl border p-3" style={{ borderColor: thm.border + '45' }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-black opacity-55">{lang === 'th' ? 'กิจกรรมในวันนี้' : 'Events on this day'}</span>
+                    <button type="button" onClick={() => {
+                      setSelectedCalendarEventId(null);
+                      setCalEventLabel('');
+                      setCalEventType('event');
+                      setCalEventColor('#8b5cf6');
+                    }} className="text-[10px] font-black" style={{ color: thm.primary }}>+ {lang === 'th' ? 'เพิ่มรายการ' : 'Add another'}</button>
+                  </div>
+                  <div className="space-y-1.5 max-h-28 overflow-y-auto">
+                    {eventsByDate[selectedCalendarDate].map((event: any) => (
+                      <button type="button" key={event.id} onClick={() => {
+                        setSelectedCalendarEventId(Number(event.id));
+                        setCalEventLabel(event.label || '');
+                        setCalEventType(event.type || 'event');
+                        setCalEventColor(calendarColorFor(event));
+                      }} className="w-full flex items-center gap-2 rounded-xl border px-2.5 py-2 text-left text-[10px] font-bold"
+                        style={{ borderColor: Number(event.id) === selectedCalendarEventId ? thm.primary : thm.border + '35' }}>
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: calendarColorFor(event) }} />
+                        <span className="truncate">{event.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
                 <label className="text-[10px] font-black opacity-45 block mb-1">ประเภทวัน / Type</label>
                 <select value={calEventType} onChange={e => setCalEventType(e.target.value as any)}
                   className="w-full bg-slate-950/5 border rounded-2xl h-11 px-3 text-xs font-bold outline-none"
@@ -1487,7 +1621,7 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
               </div>
 
               <div className="flex gap-2.5 pt-4 border-t" style={{ borderColor: thm.border + '30' }}>
-                {calendarEvents.some(e => e.date === selectedCalendarDate) && (
+                {selectedCalendarEventId !== null && (
                   <button onClick={handleDeleteCalendarEvent}
                     className="px-4 py-2.5 rounded-2xl text-xs font-black border text-red-500 border-red-200 hover:bg-red-50">
                     {t('delete')}
@@ -1546,6 +1680,22 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
                         className="w-full bg-slate-950/5 border rounded-2xl h-11 px-4 text-xs font-bold outline-none"
                         style={{ color: textColor, borderColor: thm.border + '60' }} />
                     </div>
+                    <div>
+                      <label className="text-[10px] font-black opacity-45 block mb-1">Position</label>
+                      <input value={editingRow.position || ''}
+                        onChange={e => setEditingRow({ ...editingRow, position: e.target.value })}
+                        className="w-full bg-slate-950/5 border rounded-2xl h-11 px-4 text-xs font-bold outline-none"
+                        style={{ color: textColor, borderColor: thm.border + '60' }} />
+                    </div>
+                    {editingRow._isNew && (
+                      <div>
+                        <label className="text-[10px] font-black opacity-45 block mb-1">Temporary Password (8 letters/numbers) *</label>
+                        <input required minLength={8} maxLength={8} value={editingRow.temp_password || ''}
+                          onChange={e => setEditingRow({ ...editingRow, temp_password: e.target.value })}
+                          className="w-full bg-slate-950/5 border rounded-2xl h-11 px-4 text-xs font-bold outline-none"
+                          style={{ color: textColor, borderColor: thm.border + '60' }} />
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="text-[10px] font-black opacity-45 block mb-1">Role</label>
@@ -1558,6 +1708,8 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
                           <option value="dev">DEV</option>
                         </select>
                       </div>
+                          <option value="manager">MANAGER</option>
+                          <option value="exec">EXEC</option>
                       <div>
                         <label className="text-[10px] font-black opacity-45 block mb-1">Status</label>
                         <select value={editingRow.status || 'ACTIVE'} onChange={e => setEditingRow({ ...editingRow, status: e.target.value })}
@@ -1570,6 +1722,7 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
                     </div>
                     <div>
                       <label className="text-[10px] font-black opacity-45 block mb-1">{t('read_only_points')}</label>
+                          <option value="SUSPENDED">SUSPENDED</option>
                       <input disabled value={editingRow.points || 0}
                         className="w-full bg-slate-950/5 border opacity-50 rounded-2xl h-11 px-4 text-xs font-bold outline-none"
                         style={{ color: textColor, borderColor: thm.border + '60' }} />
@@ -1604,6 +1757,20 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
                     )}
                     <div className="grid grid-cols-2 gap-3">
                       <div>
+                    {activeModule === 'missions' && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-2xl border p-3" style={{ borderColor: thm.border + '45' }}>
+                        <label className="flex items-center gap-2 cursor-pointer text-xs font-bold">
+                          <input type="checkbox" checked={Boolean(editingRow.requires_evidence)}
+                            onChange={e => setEditingRow({ ...editingRow, requires_evidence: e.target.checked })} />
+                          {lang === 'th' ? 'ต้องแนบหลักฐาน' : 'Evidence required'}
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer text-xs font-bold">
+                          <input type="checkbox" checked={Boolean(editingRow.requires_approval)}
+                            onChange={e => setEditingRow({ ...editingRow, requires_approval: e.target.checked })} />
+                          {lang === 'th' ? 'ต้องรอ Admin อนุมัติ' : 'Admin approval required'}
+                        </label>
+                      </div>
+                    )}
                         <label className="text-[10px] font-black opacity-45 block mb-1">
                           {activeModule === 'rewards' ? t('points_required') : t('points_reward')}
                         </label>
@@ -1631,6 +1798,15 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
                         placeholder="https://image-url-link.com/file.jpg"
                         style={{ color: textColor, borderColor: thm.border + '60' }} />
                     </div>
+                      <label className="mt-2 inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-black cursor-pointer"
+                        style={{ borderColor: thm.border + '60', color: thm.primary }}>
+                        <Upload size={13} /> {lang === 'th' ? 'อัปโหลดรูปภาพ' : 'Upload image'}
+                        <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden"
+                          onChange={e => {
+                            void handleContentImageUpload(e.target.files?.[0]);
+                            e.target.value = '';
+                          }} />
+                      </label>
                     <label className="flex items-center gap-2 pt-2 cursor-pointer">
                       <input type="checkbox" checked={editingRow.is_active !== false}
                         onChange={e => setEditingRow({ ...editingRow, is_active: e.target.checked })}
