@@ -1,30 +1,96 @@
 // src/helpers/api.ts
+// ชั้นเดียวที่คุยกับ Supabase และ Apps Script
+//
+// หลักการ
+//  - config มาจาก .env (VITE_*) เท่านั้น ไม่มี key ฝังในซอร์สอีกต่อไป
+//  - ไม่เก็บรหัสผ่านของผู้ใช้ไว้ที่ไหนทั้งสิ้น
+//  - เรียกได้เฉพาะ RPC ไม่มีการ select ตารางตรง
+//  - mock database ถูก import แบบ dynamic เฉพาะตอน dev จึงไม่ติดไปกับ production bundle
 
 const TOKEN_KEY = 'sb_session_token';
 const USER_KEY = 'sb_current_user';
-const TMP_PASS_KEY = 'sb_tmp_login_password';
 
-export function getConfig() {
-  const localMockMode = import.meta.env.DEV
-    && typeof window !== 'undefined'
-    && ['127.0.0.1', 'localhost'].includes(window.location.hostname)
-    && new URLSearchParams(window.location.search).get('mock') === '1';
-  if (localMockMode) {
-    return {
-      supabaseUrl: 'PASTE_SUPABASE_URL_HERE',
-      supabaseAnonKey: 'PASTE_SUPABASE_ANON_KEY_HERE',
-      driveUploadEndpoint: 'PASTE_APPS_SCRIPT_WEB_APP_URL_HERE',
-      driveUploadToken: 'CHANGE_THIS_TOKEN_TO_MATCH_APPS_SCRIPT',
-    };
-  }
-  if (typeof window !== 'undefined' && window.SB_CONNECT_CONFIG) {
-    return window.SB_CONNECT_CONFIG;
-  }
+/** RPC ที่ frontend เรียกได้ ต้องตรงกับ allowlist ใน sql/17_SECURITY_HARDENING_AND_FIXES.sql */
+export const ALLOWED_RPC = [
+  'login_with_emp_password',
+  'validate_public_session',
+  'logout_public_session',
+  'change_my_password',
+  'get_app_welcome',
+  'get_home_dashboard',
+  'get_my_profile',
+  'daily_checkin',
+  'list_news',
+  'read_news',
+  'list_missions',
+  'submit_mission',
+  'list_rewards',
+  'redeem_reward',
+  'list_my_redemptions',
+  'list_ranking',
+  'list_notifications',
+  'mark_notification_read',
+  'list_my_overall_logs',
+  'list_calendar_events',
+  'list_rule_board',
+  'public_save_my_avatar',
+  'get_admin_dashboard',
+  'admin_list_users',
+  'admin_list_news',
+  'admin_list_missions',
+  'admin_list_mission_submissions',
+  'admin_list_rewards',
+  'admin_list_reward_redemptions',
+  'admin_list_ledger',
+  'admin_list_manager_depts',
+  'admin_list_calendar_events',
+  'admin_list_rule_board',
+  'admin_list_overall_activity',
+  'admin_list_special_point_logs',
+  'admin_upsert_user',
+  'admin_upsert_news',
+  'admin_upsert_mission',
+  'admin_upsert_reward',
+  'admin_upsert_rule_board',
+  'admin_upsert_calendar_event',
+  'admin_delete_user',
+  'admin_delete_news',
+  'admin_delete_mission',
+  'admin_delete_reward',
+  'admin_delete_rule_board',
+  'admin_delete_calendar_event',
+  'admin_save_manager_depts_batch',
+  'admin_review_mission_submission',
+  'admin_update_reward_redemption',
+  'admin_add_special_points',
+  'admin_reset_password',
+] as const;
+
+export type AllowedRpc = (typeof ALLOWED_RPC)[number];
+
+const ALLOWED_RPC_SET: ReadonlySet<string> = new Set(ALLOWED_RPC);
+
+export type AppConfig = {
+  supabaseUrl: string;
+  supabaseAnonKey: string;
+  driveUploadEndpoint: string;
+};
+
+/** ใช้ mock database เฉพาะตอน dev บนเครื่องตัวเอง และต้องใส่ ?mock=1 เท่านั้น */
+export function isMockMode(): boolean {
+  return (
+    import.meta.env.DEV &&
+    typeof window !== 'undefined' &&
+    ['127.0.0.1', 'localhost'].includes(window.location.hostname) &&
+    new URLSearchParams(window.location.search).get('mock') === '1'
+  );
+}
+
+export function getConfig(): AppConfig {
   return {
-    supabaseUrl: 'https://tmcbblwfucwauksenqqr.supabase.co',
-    supabaseAnonKey: 'sb_publishable__eAshDr5vo6TBNDJ4VNRUg_tRPp2Wov',
-    driveUploadEndpoint: 'PASTE_APPS_SCRIPT_WEB_APP_URL_HERE',
-    driveUploadToken: 'CHANGE_THIS_TOKEN_TO_MATCH_APPS_SCRIPT',
+    supabaseUrl: (import.meta.env.VITE_SUPABASE_URL || '').trim(),
+    supabaseAnonKey: (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim(),
+    driveUploadEndpoint: (import.meta.env.VITE_DRIVE_UPLOAD_ENDPOINT || '').trim(),
   };
 }
 
@@ -32,17 +98,21 @@ export function isSupabaseConfigured(): boolean {
   const cfg = getConfig();
   return Boolean(
     cfg.supabaseUrl &&
-    !cfg.supabaseUrl.includes('PASTE_') &&
-    cfg.supabaseAnonKey &&
-    !cfg.supabaseAnonKey.includes('PASTE_')
+      cfg.supabaseUrl.startsWith('https://') &&
+      cfg.supabaseAnonKey &&
+      cfg.supabaseAnonKey.length > 20,
   );
 }
 
 export function getToken(): string {
-  return localStorage.getItem(TOKEN_KEY) || '';
+  try {
+    return localStorage.getItem(TOKEN_KEY) || '';
+  } catch {
+    return '';
+  }
 }
 
-export function getCurrentUser() {
+export function getCurrentUser(): Record<string, any> {
   try {
     return JSON.parse(localStorage.getItem(USER_KEY) || '{}');
   } catch {
@@ -50,21 +120,18 @@ export function getCurrentUser() {
   }
 }
 
-export function getTempPassword(): string {
-  return sessionStorage.getItem(TMP_PASS_KEY) || '';
-}
-
-export function clearTempPassword() {
-  sessionStorage.removeItem(TMP_PASS_KEY);
-}
-
 export function clearSession() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
-  clearTempPassword();
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    // ล้างร่องรอยของเวอร์ชันเก่าที่เคยเก็บรหัสผ่านไว้ในเบราว์เซอร์
+    sessionStorage.removeItem('sb_tmp_login_password');
+  } catch {
+    /* ignore */
+  }
 }
 
-export function setSession(token: string, user: any, tempPassword = '') {
+export function setSession(token: string, user: any) {
   const normalizedUser = {
     ...(user || {}),
     emp_id: user?.emp_id || user?.empId || '',
@@ -79,9 +146,6 @@ export function setSession(token: string, user: any, tempPassword = '') {
   };
   localStorage.setItem(TOKEN_KEY, token || '');
   localStorage.setItem(USER_KEY, JSON.stringify(normalizedUser));
-  if (tempPassword) {
-    sessionStorage.setItem(TMP_PASS_KEY, tempPassword);
-  }
 }
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -93,781 +157,157 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+const ALLOWED_UPLOAD_MIME = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'application/pdf',
+];
+
+export type DriveUploadResult = {
+  fileId: string;
+  fileName: string;
+  mimeType: string;
+  directUrl: string;
+  viewUrl: string;
+  downloadUrl: string;
+};
+
+/**
+ * อัปโหลดไฟล์ผ่าน Apps Script
+ * ยืนยันตัวตนด้วย session token ของผู้ใช้ (Apps Script จะเอา token ไปถาม
+ * validate_public_session กับ Supabase อีกที) ไม่มี shared secret ฝังในหน้าเว็บอีกแล้ว
+ */
 export async function uploadDriveFile(
   file: File,
   bucket: 'profile' | 'news' | 'missions' | 'rewards' | 'mission_evidence' | 'attachments',
   meta: Record<string, unknown> = {},
-) {
-  const cfg = getConfig();
-  const endpoint = String(cfg.driveUploadEndpoint || '');
+): Promise<DriveUploadResult> {
+  const endpoint = getConfig().driveUploadEndpoint;
   const sessionToken = getToken();
 
-  if (!endpoint || endpoint.includes('PASTE_')) {
-    throw new Error('ยังไม่ได้ตั้งค่า Apps Script upload endpoint');
-  }
+  if (!endpoint) throw new Error('ยังไม่ได้ตั้งค่า VITE_DRIVE_UPLOAD_ENDPOINT');
   if (!sessionToken) throw new Error('SESSION_EXPIRED');
-  if (!file.type.startsWith('image/') && file.type !== 'application/pdf' && bucket !== 'attachments') {
-    throw new Error('ประเภทไฟล์นี้ไม่ได้รับอนุญาต');
+  if (!ALLOWED_UPLOAD_MIME.includes(file.type)) {
+    throw new Error('อนุญาตเฉพาะไฟล์รูปภาพ (JPG, PNG, WEBP, GIF) และ PDF เท่านั้น');
   }
   if (file.size > 8 * 1024 * 1024) {
     throw new Error('ไฟล์มีขนาดเกิน 8 MB');
   }
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({
-      type: 'upload',
-      sessionToken,
-      bucket,
-      fileName: file.name,
-      mimeType: file.type || 'application/octet-stream',
-      base64: await fileToDataUrl(file),
-      meta,
-    }),
-  });
-  const data = await response.json().catch(() => null);
-  if (!response.ok || !data || data.status === 'error' || data.ok === false) {
-    throw new Error(data?.message || 'อัปโหลดไฟล์ไม่สำเร็จ');
-  }
-  return data as {
-    fileId: string;
-    fileName: string;
-    mimeType: string;
-    directUrl: string;
-    viewUrl: string;
-    downloadUrl: string;
-  };
-}
-
-function redactForLog(value: any): any {
-  if (value === null || value === undefined) return value;
-  if (Array.isArray(value)) return value.map(redactForLog);
-  if (typeof value !== 'object') return value;
-
-  const blocked = /password|pass|token|secret|key|authorization|image_base64|base64/i;
-  return Object.fromEntries(Object.entries(value).map(([key, val]) => {
-    if (blocked.test(key)) return [key, '[redacted]'];
-    return [key, redactForLog(val)];
-  }));
-}
-
-function actionGroupFromRpc(fn: string) {
-  const name = String(fn || '').toLowerCase();
-  if (name.includes('login') || name.includes('session') || name.includes('logout')) return 'auth';
-  if (name.includes('admin')) return 'admin';
-  if (name.includes('point') || name.includes('checkin') || name.includes('ledger')) return 'points';
-  if (name.includes('news')) return 'news';
-  if (name.includes('mission')) return 'missions';
-  if (name.includes('reward') || name.includes('redeem')) return 'rewards';
-  if (name.includes('ranking')) return 'ranking';
-  if (name.includes('profile') || name.includes('avatar') || name.includes('user')) return 'profile';
-  return 'system';
-}
-
-function emitOverallLog(fn: string, args: Record<string, unknown>, status: 'success' | 'error', message = '') {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 60_000);
   try {
-    if (typeof window === 'undefined') return;
-    const cfg = getConfig();
-    const endpoint = cfg.driveUploadEndpoint || cfg.auditLogEndpoint || '';
-    const token = cfg.driveUploadToken || cfg.auditLogToken || '';
-    if (!endpoint || endpoint.includes('PASTE_') || !token || token.includes('CHANGE_')) return;
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        type: 'upload',
+        sessionToken,
+        bucket,
+        fileName: file.name,
+        mimeType: file.type,
+        base64: await fileToDataUrl(file),
+        meta,
+      }),
+    });
 
-    const current = getCurrentUser();
-    const cleanedArgs = redactForLog(args || {});
-    const payload = {
-      token,
-      type: 'log',
-      log: {
-        action_group: actionGroupFromRpc(fn),
-        action: fn,
-        status,
-        actor_emp_id: current?.emp_id || current?.empId || (args?.p_emp_id as string) || '',
-        target_emp_id: (args?.p_target_emp_id as string) || (args?.p_emp_id as string) || (args?.p_emp_id_target as string) || '',
-        target_table: '',
-        target_id: '',
-        description: message,
-        metadata: {
-          rpc: fn,
-          args: cleanedArgs,
-          path: window.location.hash || window.location.pathname,
-          user_agent: navigator.userAgent,
-        },
-      },
-    };
-    const text = JSON.stringify(payload);
-    if (navigator.sendBeacon) {
-      navigator.sendBeacon(endpoint, new Blob([text], { type: 'application/json' }));
-      return;
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data || data.status === 'error' || data.ok === false) {
+      throw new Error(data?.message || 'อัปโหลดไฟล์ไม่สำเร็จ');
     }
-    fetch(endpoint, { method: 'POST', mode: 'no-cors', body: text }).catch(() => {});
-  } catch {
-    // Audit export must never block app usage.
+    return data as DriveUploadResult;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('อัปโหลดไฟล์นานเกินไป กรุณาลองใหม่');
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timer);
   }
 }
 
-// Local storage keys for mock database
-const MOCK_USERS_KEY = 'mock_db_users';
-const MOCK_NEWS_KEY = 'mock_db_news';
-const MOCK_MISSIONS_KEY = 'mock_db_missions';
-const MOCK_REWARDS_KEY = 'mock_db_rewards';
-const MOCK_LOGS_KEY = 'mock_db_logs';
-const MOCK_DEPTS_KEY = 'mock_db_depts';
-const MOCK_CALENDAR_KEY = 'mock_db_calendar';
-const MOCK_RULES_KEY = 'mock_db_rules';
-const MOCK_WELCOME_KEY = 'mock_db_welcome_config';
-const MOCK_REDEMPTIONS_KEY = 'mock_db_redemptions';
-const MOCK_SUBMISSIONS_KEY = 'mock_db_mission_submissions';
+/**
+ * ลืมรหัสผ่าน - ส่งคำขอไปที่ Apps Script ซึ่งจะไปขอรหัสชั่วคราวจาก Supabase
+ * แล้วส่งอีเมลแจ้งผู้ดูแลระบบพร้อมข้อมูลพนักงาน
+ *
+ * รหัสชั่วคราวไม่เคยถูกส่งกลับมาที่เบราว์เซอร์ ผู้ขอจึงอ่านรหัสของคนอื่นไม่ได้
+ * และข้อความตอบกลับเหมือนกันเสมอ ไม่ว่ารหัสพนักงานจะมีอยู่จริงหรือไม่
+ */
+export async function requestPasswordReset(empId: string): Promise<string> {
+  const id = String(empId || '').trim();
+  if (!id) throw new Error('กรุณากรอกรหัสพนักงาน');
+  if (id.length > 40) throw new Error('รหัสพนักงานไม่ถูกต้อง');
 
-function localDateKey(date = new Date()) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
+  const GENERIC = 'ส่งคำขอเรียบร้อยแล้ว ผู้ดูแลระบบจะติดต่อกลับเพื่อแจ้งรหัสชั่วคราวให้';
 
-function initMockDB() {
-  if (!localStorage.getItem(MOCK_USERS_KEY)) {
-    localStorage.setItem(MOCK_USERS_KEY, JSON.stringify([
-      { emp_id: '3672', full_name: 'คุณพนักงานทดสอบ (Test Employee)', role: 'user', department: 'Production', status: 'ACTIVE', points: 1250 },
-      { emp_id: 'ADMIN', full_name: 'IT Administrator', role: 'admin', department: 'IT', status: 'ACTIVE', points: 9999 },
-      { emp_id: 'EMP002', full_name: 'คุณนพดล ทองดี', role: 'user', department: 'Warehouse', status: 'ACTIVE', points: 800 },
-      { emp_id: 'EMP003', full_name: 'คุณสมศักดิ์ รักดี', role: 'user', department: 'QC', status: 'INACTIVE', points: 450 }
-    ]));
-  }
-  if (!localStorage.getItem(MOCK_NEWS_KEY)) {
-    localStorage.setItem(MOCK_NEWS_KEY, JSON.stringify([
-      { id: 1, topic: 'ประกาศวันหยุดเทศกาลสงกรานต์ปี 2026', detail: 'เนื่องในเทศกาลสงกรานต์ บริษัทประกาศวันหยุดตั้งแต่วันที่ 13 ถึง 17 เมษายน 2026 ขอให้พนักงานเดินทางโดยสวัสดิภาพ', points: 100, is_active: true, publish_date: '2026-07-14T10:00:00Z', created_at: '2026-07-14T10:00:00Z' },
-      { id: 2, topic: 'สัมมนาทิศทางการเติบโตของ Carebeau ปี 2026', detail: 'เชิญร่วมงานสัมมนาประจำปี ณ ห้องประชุมใหญ่ หัวข้อวิสัยทัศน์และการพัฒนาผลิตภัณฑ์ใหม่เพื่อความยั่งยืน', points: 150, is_active: true, publish_date: '2026-07-13T09:00:00Z', created_at: '2026-07-13T09:00:00Z' },
-      { id: 3, topic: 'กิจกรรมบริจาคโลหิตเคลื่อนที่ ครั้งที่ 3', detail: 'ขอเชิญชวนเพื่อนพนักงานร่วมบริจาคโลหิต ณ รถหน่วยเคลื่อนที่บริเวณลานจอดรถหน้าบริษัท', points: 200, is_active: false, publish_date: '2026-07-10T09:00:00Z', created_at: '2026-07-10T09:00:00Z' }
-    ]));
-  }
-  if (!localStorage.getItem(MOCK_MISSIONS_KEY)) {
-    localStorage.setItem(MOCK_MISSIONS_KEY, JSON.stringify([
-      { id: 101, title: 'ตอบแบบสำรวจความสุขพนักงาน', description: 'ร่วมตอบแบบสำรวจสั้นๆ 5 นาทีเพื่อนำไปพัฒนาคุณภาพชีวิตการทำงานในสำนักงาน', points: 80, is_active: true, created_at: '2026-07-14T12:00:00Z' },
-      { id: 102, title: 'ทำความสะอาดโต๊ะทำงาน (5S)', description: 'ถ่ายภาพโต๊ะทำงานที่จัดระเบียบเรียบร้อยส่งเข้ามาในระบบเพื่อรับคะแนน', points: 150, requires_evidence: true, requires_approval: true, is_active: true, created_at: '2026-07-12T08:00:00Z' }
-    ]));
-  }
-  if (!localStorage.getItem(MOCK_REWARDS_KEY)) {
-    localStorage.setItem(MOCK_REWARDS_KEY, JSON.stringify([
-      { id: 201, name: 'แก้วน้ำเกล็ดหิมะ Carebeau Limited', detail: 'แก้วเก็บความเย็นลิมิเต็ดสีสันสวยงามจากแบรนด์แคร์บิว ขนาด 30 ออนซ์', points_required: 500, stock: 10, is_active: true, image_url: 'https://images.unsplash.com/photo-1577937927133-66ef06acdf18?w=500' },
-      { id: 202, name: 'บัตรกำนัล Starbucks 100 บาท', detail: 'ใช้แลกเครื่องดื่มและสินค้าแบรนด์สตาร์บัคส์ได้ทุกสาขา', points_required: 1000, stock: 5, is_active: true, image_url: 'https://images.unsplash.com/photo-1544787219-7f47ccb76574?w=500' }
-    ]));
-  }
-  if (!localStorage.getItem(MOCK_LOGS_KEY)) {
-    localStorage.setItem(MOCK_LOGS_KEY, JSON.stringify([
-      { emp_id: '3672', title: 'เช็คอินประจำวัน', amount: 50, created_at: '2026-07-15T08:30:00Z', source_type: 'CHECKIN', description: 'เช็คอินประจำวันที่ 15/07/2026' },
-      { emp_id: '3672', title: 'แลกรางวัล: แก้วน้ำเกล็ดหิมะ', amount: -500, created_at: '2026-07-14T14:20:00Z', source_type: 'REDEEM', description: 'แลกรางวัลแก้วน้ำเกล็ดหิมะ' }
-    ]));
-  }
-  if (!localStorage.getItem(MOCK_DEPTS_KEY)) {
-    localStorage.setItem(MOCK_DEPTS_KEY, JSON.stringify([
-      { manager_emp_id: 'EMP005', department_id: 'DEPT01', department_name: 'Production', is_active: true },
-      { manager_emp_id: 'EMP006', department_id: 'DEPT02', department_name: 'QC', is_active: true }
-    ]));
-  }
-  if (!localStorage.getItem(MOCK_CALENDAR_KEY)) {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    localStorage.setItem(MOCK_CALENDAR_KEY, JSON.stringify([
-      { id: 1, date: `${y}-${m}-01`, type: 'holiday', label: 'วันหยุดประจำเดือน', color: '#ef4444', is_active: true, created_by: 'ADMIN' },
-      { id: 2, date: `${y}-${m}-13`, type: 'event',   label: 'กิจกรรมสัมมนาพนักงาน', color: '#8b5cf6', is_active: true, created_by: 'ADMIN' },
-      { id: 3, date: `${y}-${m}-25`, type: 'note',    label: 'กิจกรรมบริจาคโลหิต', color: '#22c55e', is_active: true, created_by: 'ADMIN' },
-    ]));
-  }
-  if (!localStorage.getItem(MOCK_RULES_KEY)) {
-    localStorage.setItem(MOCK_RULES_KEY, JSON.stringify([
-      { id: 1, category: 'policy', title: 'ระเบียบการเข้างานและการแต่งกาย', body_html: '<p>พนักงานควรลงเวลาตามรอบงาน แต่งกายสุภาพ และติดบัตรพนักงานในพื้นที่บริษัท</p>', color: '#8b5cf6', sort_order: 10, is_active: true, updated_at: new Date().toISOString() },
-      { id: 2, category: '5s', title: 'แนวทาง 5ส ประจำพื้นที่', body_html: '<ul><li>สะสางของที่ไม่จำเป็น</li><li>สะดวกต่อการหยิบใช้</li><li>สะอาดและตรวจเช็กทุกวัน</li></ul>', color: '#22c55e', sort_order: 20, is_active: true, updated_at: new Date().toISOString() },
-      { id: 3, category: 'iso_gmp', title: 'ISO/GMP จุดสำคัญที่ต้องจำ', body_html: '<p>รักษาความสะอาด บันทึกข้อมูลตามจริง และปฏิบัติตาม WI/SOP ที่ประกาศใช้ล่าสุด</p>', color: '#0ea5e9', sort_order: 30, is_active: true, updated_at: new Date().toISOString() },
-      { id: 4, category: 'company', title: 'เกี่ยวกับบริษัท', body_html: '<p>SB Connect เป็นพื้นที่สื่อสารข่าวสาร กิจกรรม คะแนน และบริการภายในสำหรับพนักงาน</p>', color: '#f59e0b', sort_order: 40, is_active: true, updated_at: new Date().toISOString() },
-    ]));
-  }
-  if (!localStorage.getItem(MOCK_WELCOME_KEY)) {
-    localStorage.setItem(MOCK_WELCOME_KEY, JSON.stringify({
-      title: 'SB CONNECT',
-      message: 'ยินดีต้อนรับเข้าสู่ระบบ SB Connect',
-      video_url: '',
-      is_active: true,
-      updated_at: new Date().toISOString(),
-    }));
-  }
-  if (!localStorage.getItem(MOCK_REDEMPTIONS_KEY)) localStorage.setItem(MOCK_REDEMPTIONS_KEY, '[]');
-  if (!localStorage.getItem(MOCK_SUBMISSIONS_KEY)) localStorage.setItem(MOCK_SUBMISSIONS_KEY, '[]');
-}
+  if (isMockMode()) return GENERIC;
 
-function handleMockRpc(fn: string, args: Record<string, any> = {}): any {
-  initMockDB();
+  const endpoint = getConfig().driveUploadEndpoint;
+  if (!endpoint) throw new Error('ยังไม่ได้ตั้งค่า VITE_DRIVE_UPLOAD_ENDPOINT');
 
-  const getList = (key: string) => JSON.parse(localStorage.getItem(key) || '[]');
-  const saveList = (key: string, data: any) => localStorage.setItem(key, JSON.stringify(data));
-
-  const token = args.p_token || getToken();
-  let empId = '3672';
-  if (token === 'mock_admin_token') empId = 'ADMIN';
-
-  const users = getList(MOCK_USERS_KEY);
-  const currentUserObj = users.find((u: any) => u.emp_id === empId) || users[0];
-
-  switch (fn) {
-    case 'get_home_dashboard': {
-      const news = getList(MOCK_NEWS_KEY).filter((n: any) => n.is_active);
-      const ranking = [...users].sort((a: any, b: any) => b.points - a.points);
-      const logs = getList(MOCK_LOGS_KEY).filter((l: any) => l.emp_id === empId);
-      const todayKey = localDateKey();
-      const checkedInToday = logs.some((l: any) => l.source_type === 'CHECKIN' && ((l.checkin_date || l.created_at?.slice(0, 10)) === todayKey));
-
-      return {
-        points: currentUserObj.points,
-        checkin_count: logs.filter((l: any) => l.source_type === 'CHECKIN').length,
-        checked_in_today: checkedInToday,
-        last_checkin: logs.find((l: any) => l.source_type === 'CHECKIN')?.created_at || 'ยังไม่เคยเช็คอิน',
-        news_read_count: logs.filter((l: any) => l.source_type === 'READ_NEWS').length,
-        mission_done_count: logs.filter((l: any) => l.source_type === 'MISSION').length,
-        reward_count: logs.filter((l: any) => l.source_type === 'REDEEM').length,
-        latest_news: news.slice(0, 5),
-        ranking: ranking.slice(0, 10),
-        user: currentUserObj
-      };
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 30_000);
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        type: 'password_reset_request',
+        empId: id,
+        userAgent: navigator.userAgent,
+      }),
+    });
+    const data = await res.json().catch(() => null);
+    return (data && typeof data.message === 'string' && data.message) || GENERIC;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('ส่งคำขอนานเกินไป กรุณาลองใหม่อีกครั้ง');
     }
-
-    case 'get_my_profile':
-      return currentUserObj;
-
-    case 'daily_checkin': {
-      const logs = getList(MOCK_LOGS_KEY);
-      const todayKey = localDateKey();
-      const checkedInToday = logs.some((l: any) => l.emp_id === empId && l.source_type === 'CHECKIN' && ((l.checkin_date || l.created_at?.slice(0, 10)) === todayKey));
-
-      if (checkedInToday) {
-        throw new Error('คุณเช็คอินวันนี้ไปแล้ว');
-      }
-
-      currentUserObj.points += 50;
-      saveList(MOCK_USERS_KEY, users);
-
-      logs.unshift({
-        emp_id: empId,
-        title: 'เช็คอินประจำวัน',
-        amount: 50,
-        created_at: new Date().toISOString(),
-        checkin_date: todayKey,
-        stamp: 'PASS',
-        source_type: 'CHECKIN',
-        description: 'เช็คอินประจำวันสำเร็จ ได้รับ 50 คะแนน'
-      });
-      saveList(MOCK_LOGS_KEY, logs);
-
-      return { status: 'success', message: 'เช็คอินประจำวันเสร็จสมบูรณ์! คุณได้รับ 50 คะแนน' };
-    }
-
-    case 'get_app_welcome':
-    case 'admin_get_app_welcome':
-      return getList(MOCK_WELCOME_KEY) || {};
-
-    case 'admin_save_app_welcome': {
-      const payload = args.p_payload || {};
-      const next = {
-        title: payload.title || 'SB CONNECT',
-        message: payload.message || '',
-        video_url: payload.video_url || '',
-        is_active: payload.is_active !== false,
-        updated_at: new Date().toISOString(),
-        updated_by: empId,
-      };
-      localStorage.setItem(MOCK_WELCOME_KEY, JSON.stringify(next));
-      return { status: 'success', config: next };
-    }
-
-    case 'list_news': {
-      const news = getList(MOCK_NEWS_KEY);
-      const logs = getList(MOCK_LOGS_KEY).filter((l: any) => l.emp_id === empId && l.source_type === 'READ_NEWS');
-      return news.map((n: any) => ({
-        ...n,
-        is_read: logs.some((l: any) => String(l.description).includes(`อ่านข่าว ID: ${n.id}`))
-      }));
-    }
-
-    case 'read_news': {
-      const newsId = args.p_news_id;
-      const newsList = getList(MOCK_NEWS_KEY);
-      const newsItem = newsList.find((n: any) => n.id === Number(newsId));
-      if (!newsItem) throw new Error('ไม่พบข่าวสาร');
-
-      const logs = getList(MOCK_LOGS_KEY);
-      const alreadyRead = logs.some((l: any) => l.emp_id === empId && l.source_type === 'READ_NEWS' && String(l.description).includes(`อ่านข่าว ID: ${newsId}`));
-
-      if (!alreadyRead) {
-        currentUserObj.points += newsItem.points;
-        saveList(MOCK_USERS_KEY, users);
-
-        logs.unshift({
-          emp_id: empId,
-          title: `อ่านข่าว: ${newsItem.topic}`,
-          amount: newsItem.points,
-          created_at: new Date().toISOString(),
-          source_type: 'READ_NEWS',
-          description: `อ่านข่าว ID: ${newsId} ได้รับ ${newsItem.points} คะแนน`
-        });
-        saveList(MOCK_LOGS_KEY, logs);
-      }
-
-      return { status: 'success', message: 'บันทึกการอ่านข่าวสำเร็จ!' };
-    }
-
-    case 'list_missions': {
-      const missions = getList(MOCK_MISSIONS_KEY);
-      const submissions = getList(MOCK_SUBMISSIONS_KEY).filter((item: any) => item.emp_id === empId);
-      return missions.map((m: any) => ({
-        ...m,
-        submission_status: submissions.find((item: any) => String(item.mission_id) === String(m.id))?.status || '',
-        is_done: submissions.some((item: any) => String(item.mission_id) === String(m.id) && item.status === 'Completed')
-      }));
-    }
-
-    case 'submit_mission': {
-      const missionId = args.p_mission_id;
-      const missionsList = getList(MOCK_MISSIONS_KEY);
-      const missionItem = missionsList.find((m: any) => m.id === Number(missionId));
-      if (!missionItem) throw new Error('ไม่พบภารกิจ');
-
-      const submissions = getList(MOCK_SUBMISSIONS_KEY);
-      const alreadyDone = submissions.some((item: any) => item.emp_id === empId && String(item.mission_id) === String(missionId) && ['Pending', 'Completed'].includes(item.status));
-
-      if (alreadyDone) throw new Error('คุณทำภารกิจนี้ไปแล้ว');
-
-      if (missionItem.requires_evidence && !args.p_evidence_url) throw new Error('กรุณาแนบหลักฐานก่อนส่งภารกิจ');
-      const pending = Boolean(missionItem.requires_approval);
-      submissions.unshift({
-        id: Date.now(),
-        submitted_at: new Date().toISOString(),
-        emp_id: empId,
-        employee_name: currentUserObj.full_name,
-        mission_id: missionId,
-        mission_title: missionItem.title,
-        points: missionItem.points,
-        evidence_url: args.p_evidence_url || '',
-        status: pending ? 'Pending' : 'Completed',
-      });
-      saveList(MOCK_SUBMISSIONS_KEY, submissions);
-
-      if (!pending) {
-        currentUserObj.points += missionItem.points;
-        saveList(MOCK_USERS_KEY, users);
-      }
-
-      const logs = getList(MOCK_LOGS_KEY);
-      logs.unshift({
-        emp_id: empId,
-        title: `ทำภารกิจ: ${missionItem.title}`,
-        amount: pending ? 0 : missionItem.points,
-        created_at: new Date().toISOString(),
-        source_type: 'MISSION',
-        description: pending ? `ส่งภารกิจ ID: ${missionId} รอตรวจสอบ` : `ส่งภารกิจ ID: ${missionId} ได้รับ ${missionItem.points} คะแนน`
-      });
-      saveList(MOCK_LOGS_KEY, logs);
-
-      return { status: 'success', message: pending ? 'ส่งภารกิจแล้ว กรุณารอผู้ดูแลอนุมัติ' : 'ส่งภารกิจเสร็จเรียบร้อย! ได้รับคะแนนสะสม' };
-    }
-
-    case 'list_rewards':
-      return getList(MOCK_REWARDS_KEY);
-
-    case 'list_my_redemptions':
-      return getList(MOCK_REDEMPTIONS_KEY).filter((item: any) => item.emp_id === empId);
-
-    case 'redeem_reward': {
-      const rewardId = args.p_reward_id;
-      const rewardsList = getList(MOCK_REWARDS_KEY);
-      const rewardItem = rewardsList.find((r: any) => r.id === Number(rewardId));
-      if (!rewardItem) throw new Error('ไม่พบของรางวัล');
-      if (rewardItem.stock !== null && rewardItem.stock <= 0) throw new Error('ของรางวัลหมดสต็อก');
-      if (currentUserObj.points < rewardItem.points_required) throw new Error('แต้มสะสมของคุณไม่เพียงพอ');
-
-      currentUserObj.points -= rewardItem.points_required;
-      saveList(MOCK_USERS_KEY, users);
-
-      if (rewardItem.stock !== null) {
-        rewardItem.stock -= 1;
-        saveList(MOCK_REWARDS_KEY, rewardsList);
-      }
-
-      const logs = getList(MOCK_LOGS_KEY);
-      logs.unshift({
-        emp_id: empId,
-        title: `แลกรางวัล: ${rewardItem.name}`,
-        amount: -rewardItem.points_required,
-        created_at: new Date().toISOString(),
-        source_type: 'REDEEM',
-        description: `แลกของรางวัล ID: ${rewardId} หัก ${rewardItem.points_required} คะแนน`
-      });
-      saveList(MOCK_LOGS_KEY, logs);
-
-      const redemptions = getList(MOCK_REDEMPTIONS_KEY);
-      redemptions.unshift({
-        id: `RDM-${Date.now()}`,
-        redemption_id: `RDM-${Date.now()}`,
-        emp_id: empId,
-        employee_name: currentUserObj.full_name,
-        reward_id: rewardId,
-        reward_name: rewardItem.name,
-        points_spent: rewardItem.points_required,
-        status: 'Pending',
-        redeemed_at: new Date().toISOString(),
-      });
-      saveList(MOCK_REDEMPTIONS_KEY, redemptions);
-
-      return { status: 'success', message: 'แลกของรางวัลสำเร็จ!' };
-    }
-
-    case 'list_ranking':
-      return [...users].sort((a: any, b: any) => b.points - a.points);
-
-    case 'list_notifications':
-      return [
-        { id: 301, title: 'ยินดีต้อนรับสู่ระบบ SB Connect ใหม่', detail: 'แอปพลิเคชันเวอร์ชันใหม่ล่าสุดของเราพร้อมใช้งานแล้ว ขอให้สนุกกับการสะสมแต้ม!', is_read: false, created_at: new Date(Date.now() - 3600000).toISOString() }
-      ];
-
-    case 'mark_notification_read':
-      return { status: 'success' };
-
-    case 'list_my_overall_logs':
-      return getList(MOCK_LOGS_KEY).filter((l: any) => l.emp_id === empId);
-
-    case 'get_admin_dashboard': {
-      return {
-        total_users: users.length,
-        total_news: getList(MOCK_NEWS_KEY).length,
-        total_missions: getList(MOCK_MISSIONS_KEY).length,
-        total_rewards: getList(MOCK_REWARDS_KEY).length,
-        users: users.slice(0, 5),
-        logs: getList(MOCK_LOGS_KEY).slice(0, 10),
-        ranking: [...users].sort((a: any, b: any) => b.points - a.points).slice(0, 10)
-      };
-    }
-
-    case 'admin_list_users':
-      return users;
-
-    case 'admin_list_news':
-      return getList(MOCK_NEWS_KEY);
-
-    case 'admin_list_missions':
-      return getList(MOCK_MISSIONS_KEY);
-
-    case 'admin_list_rewards':
-      return getList(MOCK_REWARDS_KEY);
-
-    case 'admin_list_mission_submissions':
-      return getList(MOCK_SUBMISSIONS_KEY);
-
-    case 'admin_review_mission_submission': {
-      const submissions = getList(MOCK_SUBMISSIONS_KEY);
-      const submission = submissions.find((item: any) => Number(item.id) === Number(args.p_submission_id));
-      if (!submission) throw new Error('ไม่พบรายการส่งภารกิจ');
-      const wasPending = submission.status === 'Pending';
-      submission.status = args.p_decision === 'Approved' ? 'Completed' : 'Rejected';
-      submission.reviewed_at = new Date().toISOString();
-      submission.review_note = args.p_note || '';
-      if (wasPending && submission.status === 'Completed') {
-        const target = users.find((item: any) => item.emp_id === submission.emp_id);
-        if (target) target.points += Number(submission.points || 0);
-        saveList(MOCK_USERS_KEY, users);
-      }
-      saveList(MOCK_SUBMISSIONS_KEY, submissions);
-      return { status: 'success' };
-    }
-
-    case 'admin_list_reward_redemptions':
-      return getList(MOCK_REDEMPTIONS_KEY);
-
-    case 'admin_update_reward_redemption': {
-      const redemptions = getList(MOCK_REDEMPTIONS_KEY);
-      const redemption = redemptions.find((item: any) => String(item.redemption_id || item.id) === String(args.p_redemption_id));
-      if (!redemption) throw new Error('ไม่พบรายการแลกรางวัล');
-      if (args.p_status === 'Cancelled' && redemption.status !== 'Cancelled') {
-        const target = users.find((item: any) => item.emp_id === redemption.emp_id);
-        if (target) target.points += Number(redemption.points_spent || 0);
-        const reward = getList(MOCK_REWARDS_KEY);
-        const rewardItem = reward.find((item: any) => String(item.id) === String(redemption.reward_id));
-        if (rewardItem && rewardItem.stock !== null) rewardItem.stock += 1;
-        saveList(MOCK_USERS_KEY, users);
-        saveList(MOCK_REWARDS_KEY, reward);
-      }
-      redemption.status = args.p_status;
-      redemption.updated_at = new Date().toISOString();
-      saveList(MOCK_REDEMPTIONS_KEY, redemptions);
-      return { status: 'success' };
-    }
-
-    case 'admin_list_ledger':
-      return getList(MOCK_LOGS_KEY);
-
-    case 'admin_list_special_point_logs':
-      return getList(MOCK_LOGS_KEY).filter((l: any) => l.source_type === 'SPECIAL_POINTS');
-
-    case 'admin_list_overall_activity':
-      return getList(MOCK_LOGS_KEY).map((l: any) => ({
-        created_at: l.created_at,
-        action_group: l.source_type === 'SPECIAL_POINTS' ? 'points' : 'activity',
-        action: l.source_type || 'SYSTEM',
-        actor_emp_id: l.admin_emp_id || l.emp_id || '',
-        target_emp_id: l.target_emp_id || l.emp_id || '',
-        description: l.description || l.title || '',
-      }));
-
-    case 'admin_list_manager_depts':
-      return getList(MOCK_DEPTS_KEY);
-
-    case 'list_calendar_events':
-      return getList(MOCK_CALENDAR_KEY).filter((e: any) => e.is_active);
-
-    case 'admin_list_calendar_events':
-      return getList(MOCK_CALENDAR_KEY);
-
-    case 'admin_upsert_calendar_event': {
-      const payload = args.p_payload;
-      const list = getList(MOCK_CALENDAR_KEY);
-      const nextPayload = { ...payload, color: payload.color || (payload.type === 'holiday' ? '#ef4444' : payload.type === 'note' ? '#22c55e' : '#8b5cf6') };
-      if (payload.id) {
-        const idx = list.findIndex((x: any) => x.id === payload.id);
-        if (idx >= 0) list[idx] = { ...list[idx], ...nextPayload };
-      } else {
-        const newId = list.length > 0 ? Math.max(...list.map((x: any) => x.id)) + 1 : 1;
-        list.push({ ...nextPayload, id: newId, created_by: empId, is_active: payload.is_active !== false });
-      }
-      saveList(MOCK_CALENDAR_KEY, list);
-      return { status: 'success' };
-    }
-
-    case 'admin_delete_calendar_event': {
-      const id = Number(args.p_id);
-      let list = getList(MOCK_CALENDAR_KEY);
-      list = list.filter((x: any) => x.id !== id);
-      saveList(MOCK_CALENDAR_KEY, list);
-      return { status: 'success' };
-    }
-
-    case 'list_rule_board':
-      return getList(MOCK_RULES_KEY)
-        .filter((x: any) => x.is_active !== false)
-        .sort((a: any, b: any) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
-
-    case 'admin_list_rule_board':
-      return getList(MOCK_RULES_KEY)
-        .sort((a: any, b: any) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
-
-    case 'admin_upsert_rule_board': {
-      const payload = args.p_payload;
-      const list = getList(MOCK_RULES_KEY);
-      const nextPayload = { ...payload, updated_at: new Date().toISOString(), is_active: payload.is_active !== false };
-      if (payload.id) {
-        const idx = list.findIndex((x: any) => x.id === payload.id);
-        if (idx >= 0) list[idx] = { ...list[idx], ...nextPayload };
-      } else {
-        const newId = list.length > 0 ? Math.max(...list.map((x: any) => x.id)) + 1 : 1;
-        list.push({ ...nextPayload, id: newId, created_at: new Date().toISOString() });
-      }
-      saveList(MOCK_RULES_KEY, list);
-      return { status: 'success' };
-    }
-
-    case 'admin_delete_rule_board': {
-      const id = Number(args.p_id);
-      const list = getList(MOCK_RULES_KEY).filter((x: any) => x.id !== id);
-      saveList(MOCK_RULES_KEY, list);
-      return { status: 'success' };
-    }
-
-    case 'admin_upsert_user': {
-      const payload = args.p_payload;
-      const targetEmp = payload.emp_id;
-      const index = users.findIndex((u: any) => u.emp_id === targetEmp);
-      if (index >= 0) {
-        // Protect points if user is modifying points directly and is not authorized or if we want it read-only
-        // As requested: "ยกเว้นแก้คะแนน" (Except editing points) - Admin can update full_name, dept, role, status but points should remain as they were, unless creating a new user where it defaults to 0 or initial value.
-        const existingUser = users[index];
-        users[index] = { ...existingUser, ...payload, points: existingUser.points }; // Keep points read-only
-      } else {
-        users.push({ ...payload, points: 0, status: payload.status || 'ACTIVE' });
-      }
-      saveList(MOCK_USERS_KEY, users);
-      return { status: 'success' };
-    }
-
-    case 'admin_delete_user': {
-      const targetEmp = args.p_emp_id;
-      const filtered = users.filter((u: any) => u.emp_id !== targetEmp);
-      saveList(MOCK_USERS_KEY, filtered);
-      return { status: 'success' };
-    }
-
-    case 'admin_upsert_news': {
-      const payload = args.p_payload;
-      const list = getList(MOCK_NEWS_KEY);
-      if (payload.id) {
-        const idx = list.findIndex((x: any) => x.id === payload.id);
-        if (idx >= 0) list[idx] = { ...list[idx], ...payload };
-      } else {
-        const newId = list.length > 0 ? Math.max(...list.map((x: any) => x.id)) + 1 : 1;
-        list.push({ ...payload, id: newId, created_at: new Date().toISOString() });
-      }
-      saveList(MOCK_NEWS_KEY, list);
-      return { status: 'success' };
-    }
-
-    case 'admin_upsert_mission': {
-      const payload = args.p_payload;
-      const list = getList(MOCK_MISSIONS_KEY);
-      if (payload.id) {
-        const idx = list.findIndex((x: any) => x.id === payload.id);
-        if (idx >= 0) list[idx] = { ...list[idx], ...payload };
-      } else {
-        const newId = list.length > 0 ? Math.max(...list.map((x: any) => x.id)) + 1 : 101;
-        list.push({ ...payload, id: newId, created_at: new Date().toISOString() });
-      }
-      saveList(MOCK_MISSIONS_KEY, list);
-      return { status: 'success' };
-    }
-
-    case 'admin_upsert_reward': {
-      const payload = args.p_payload;
-      const list = getList(MOCK_REWARDS_KEY);
-      if (payload.id) {
-        const idx = list.findIndex((x: any) => x.id === payload.id);
-        if (idx >= 0) list[idx] = { ...list[idx], ...payload };
-      } else {
-        const newId = list.length > 0 ? Math.max(...list.map((x: any) => x.id)) + 1 : 201;
-        list.push({ ...payload, id: newId });
-      }
-      saveList(MOCK_REWARDS_KEY, list);
-      return { status: 'success' };
-    }
-
-    case 'admin_delete_news': {
-      const id = Number(args.p_id);
-      let list = getList(MOCK_NEWS_KEY);
-      list = list.filter((x: any) => x.id !== id);
-      saveList(MOCK_NEWS_KEY, list);
-      return { status: 'success' };
-    }
-
-    case 'admin_delete_mission': {
-      const id = Number(args.p_id);
-      let list = getList(MOCK_MISSIONS_KEY);
-      list = list.filter((x: any) => x.id !== id);
-      saveList(MOCK_MISSIONS_KEY, list);
-      return { status: 'success' };
-    }
-
-    case 'admin_delete_reward': {
-      const id = Number(args.p_id);
-      let list = getList(MOCK_REWARDS_KEY);
-      list = list.filter((x: any) => x.id !== id);
-      saveList(MOCK_REWARDS_KEY, list);
-      return { status: 'success' };
-    }
-
-    case 'admin_upsert_manager_dept': {
-      const payload = args.p_payload;
-      const list = getList(MOCK_DEPTS_KEY);
-      const idx = list.findIndex((x: any) => x.manager_emp_id === payload.manager_emp_id && x.department_id === payload.department_id);
-      if (idx >= 0) {
-        list[idx] = { ...list[idx], ...payload };
-      } else {
-        list.push(payload);
-      }
-      saveList(MOCK_DEPTS_KEY, list);
-      return { status: 'success' };
-    }
-
-    case 'admin_save_manager_depts_batch': {
-      const mappings = args.p_mappings as any[];
-      saveList(MOCK_DEPTS_KEY, mappings);
-      return { status: 'success' };
-    }
-
-    case 'admin_add_special_points': {
-      const targetEmp = String(args.p_target_emp_id || '');
-      const points = Number(args.p_points || 0);
-      const targetIdx = users.findIndex((u: any) => u.emp_id === targetEmp);
-      if (targetIdx < 0) throw new Error('TARGET_EMP_ID_NOT_FOUND');
-      const before = Number(users[targetIdx].points || 0);
-      users[targetIdx] = { ...users[targetIdx], points: before + points };
-      saveList(MOCK_USERS_KEY, users);
-      const logs = getList(MOCK_LOGS_KEY);
-      const txId = `SP-${Date.now()}`;
-      logs.unshift({
-        id: txId,
-        tx_id: txId,
-        emp_id: targetEmp,
-        target_emp_id: targetEmp,
-        admin_emp_id: args.p_confirm_admin_emp_id,
-        hr_emp_id: args.p_hr_emp_id,
-        title: 'Special Points',
-        amount: points,
-        points,
-        balance_after: before + points,
-        created_at: new Date().toISOString(),
-        source_type: 'SPECIAL_POINTS',
-        description: args.p_reason || 'Special activity points'
-      });
-      saveList(MOCK_LOGS_KEY, logs);
-      return { status: 'success', tx_id: txId, balance_after: before + points };
-    }
-
-    case 'admin_reset_password': {
-      const targetEmp = args.p_emp_id;
-      const tempPass = args.p_temp_password;
-      const logs = getList(MOCK_LOGS_KEY);
-      logs.unshift({
-        emp_id: empId,
-        title: 'รีเซ็ตรหัสผ่านพนักงาน',
-        amount: 0,
-        created_at: new Date().toISOString(),
-        source_type: 'SYSTEM',
-        description: `แอดมินรีเซ็ตรหัสผ่านให้กับพนักงาน ${targetEmp} เป็นรหัสชั่วคราว: ${tempPass}`
-      });
-      saveList(MOCK_LOGS_KEY, logs);
-      return { status: 'success' };
-    }
-
-    default:
-      return { status: 'success' };
+    throw new Error('ส่งคำขอไม่สำเร็จ กรุณาลองใหม่ หรือติดต่อผู้ดูแลระบบโดยตรง');
+  } finally {
+    window.clearTimeout(timer);
   }
 }
 
-export async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T> {
+const RPC_TIMEOUT_MS = 20_000;
+
+export async function rpc<T>(fn: AllowedRpc | string, args: Record<string, unknown> = {}): Promise<T> {
+  if (!ALLOWED_RPC_SET.has(fn)) {
+    // กันพิมพ์ชื่อผิดและกันเรียกฟังก์ชันที่ไม่ได้อยู่ใน allowlist ของฝั่งฐานข้อมูล
+    throw new Error(`RPC ไม่อยู่ในรายการที่อนุญาต: ${fn}`);
+  }
+
+  if (isMockMode()) {
+    const { handleMockRpc } = await import('./mockApi');
+    return handleMockRpc(fn, args) as T;
+  }
+
   const cfg = getConfig();
-
-  // Mode check: use mock RPC if offline or placeholder
-  const isPlaceholder = !isSupabaseConfigured();
-
-  if (isPlaceholder) {
-    try {
-      return handleMockRpc(fn, args) as T;
-    } catch (err: any) {
-      throw err;
-    }
+  if (!isSupabaseConfigured()) {
+    throw new Error('ยังไม่ได้ตั้งค่า VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY');
   }
 
-  try {
-    const url = `${cfg.supabaseUrl.replace(/\/$/, '')}/rest/v1/rpc/${fn}`;
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
 
-    const res = await fetch(url, {
+  try {
+    const res = await fetch(`${cfg.supabaseUrl.replace(/\/$/, '')}/rest/v1/rpc/${fn}`, {
       method: 'POST',
       headers: {
         apikey: cfg.supabaseAnonKey,
         Authorization: `Bearer ${cfg.supabaseAnonKey}`,
         'Content-Type': 'application/json',
       },
+      signal: controller.signal,
       body: JSON.stringify(args || {}),
     });
 
     const rawText = await res.text();
     let data: any = null;
-
     try {
       data = rawText ? JSON.parse(rawText) : null;
     } catch {
@@ -876,35 +316,40 @@ export async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Pr
 
     if (!res.ok) {
       const obj = data as { message?: string; error?: string; details?: string };
-      const msg = obj?.message || obj?.error || obj?.details || rawText || `RPC error: ${fn}`;
-      emitOverallLog(fn, args, 'error', msg);
-      throw new Error(msg);
+      // ไม่โยนข้อความดิบจากฐานข้อมูลออกหน้าจอ กัน information disclosure
+      if (import.meta.env.DEV) {
+        console.warn(`[rpc:${fn}]`, obj?.message || obj?.details || rawText);
+      }
+      if (res.status === 401 || res.status === 403) {
+        throw new Error('SESSION_EXPIRED');
+      }
+      throw new Error('ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง');
     }
 
-    if (data?.status === 'error') {
-      emitOverallLog(fn, args, 'error', data.message || 'RPC_ERROR');
-      throw new Error(data.message || 'RPC_ERROR');
+    if (data && typeof data === 'object' && data.status === 'error') {
+      throw new Error(data.message || 'ทำรายการไม่สำเร็จ');
     }
 
-    emitOverallLog(fn, args, 'success');
     return data as T;
   } catch (err) {
-    if (isPlaceholder) {
-      console.warn(`Mock RPC ${fn} failed`, err);
-      return handleMockRpc(fn, args) as T;
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('เชื่อมต่อเซิร์ฟเวอร์นานเกินไป กรุณาลองใหม่');
+    }
+    if (err instanceof TypeError) {
+      throw new Error('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ต');
     }
     throw err;
+  } finally {
+    window.clearTimeout(timer);
   }
 }
 
 export async function logout() {
   const token = getToken();
   try {
-    if (token) {
-      await rpc('logout_public_session', { p_token: token });
-    }
-  } catch (err) {
-    console.warn(err);
+    if (token) await rpc('logout_public_session', { p_token: token });
+  } catch {
+    /* ออกจากระบบฝั่งเครื่องให้ได้เสมอ แม้เซิร์ฟเวอร์จะตอบไม่ได้ */
   }
   clearSession();
   window.location.hash = '';

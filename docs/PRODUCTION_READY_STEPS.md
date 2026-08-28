@@ -1,3 +1,8 @@
+> ⚠️ เอกสารนี้ล้าสมัยแล้ว ขั้นตอนก่อนขึ้นจริงที่ถูกต้องอยู่ใน [RUNBOOK.md](RUNBOOK.md)
+>
+> โดยเฉพาะ: ต้องรัน `sql/17_SECURITY_HARDENING_AND_FIXES.sql` เป็นไฟล์สุดท้าย
+> และต้องหมุนรหัส first-login ที่เดาได้ด้วย `sb_rotate_guessable_first_login()`
+
 # Production Ready Steps
 
 Run these SQL files in Supabase SQL Editor in this order after the existing setup:

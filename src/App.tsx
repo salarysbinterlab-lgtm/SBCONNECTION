@@ -1,8 +1,11 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, Suspense, lazy, useEffect, useState } from 'react';
 import { LockKeyhole, LogIn, UserRound, X } from 'lucide-react';
-import { rpc, setSession, clearSession, clearTempPassword, getTempPassword, getToken, getCurrentUser, isSupabaseConfigured } from './helpers/api';
-import UserDashboard from './components/UserDashboard';
-import AdminDashboard from './components/AdminDashboard';
+import { rpc, setSession, clearSession, getToken, getCurrentUser, isSupabaseConfigured, isMockMode, requestPasswordReset } from './helpers/api';
+import AppLoader from './components/AppLoader';
+
+// โหลดหน้าจอหลักแบบ lazy: ผู้ใช้ทั่วไปไม่ต้องดาวน์โหลดโค้ดฝั่งแอดมิน และกลับกัน
+const UserDashboard = lazy(() => import('./components/UserDashboard'));
+const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
 
 type ToonImage = {
   src: string;
@@ -35,8 +38,20 @@ const IMAGES: ToonImage[] = [
   { src: `${BASE}image/index_4.png`, bg: '#E882B4', panel: '#ED9DC4' },
 ];
 
+// ต้องตรงกับ public.sb_is_valid_password() ใน sql/17_SECURITY_HARDENING_AND_FIXES.sql
+const PASSWORD_RULE_TEXT =
+  'รหัสผ่านต้องยาว 8-72 ตัว มีทั้งตัวอักษรและตัวเลข ใช้อักขระพิเศษได้ ห้ามเว้นวรรคและห้ามภาษาไทย';
+
 function isPasswordValid(value: string) {
-  return /^[A-Za-z0-9]{8}$/.test(value);
+  return (
+    typeof value === 'string' &&
+    value.length >= 8 &&
+    value.length <= 72 &&
+    value === value.trim() &&
+    /^[\x21-\x7E]+$/.test(value) &&
+    /[A-Za-z]/.test(value) &&
+    /[0-9]/.test(value)
+  );
 }
 
 function roleForIndex(index: number, activeIndex: number) {
@@ -126,6 +141,11 @@ export default function App() {
   
   // First-time Password Setup State
   const [showFirstLogin, setShowFirstLogin] = useState(false);
+  // ลืมรหัสผ่าน
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmpId, setForgotEmpId] = useState('');
+  const [forgotBusy, setForgotBusy] = useState(false);
+  const [forgotDone, setForgotDone] = useState('');
   const [firstLoginEmpId, setFirstLoginEmpId] = useState('');
   const [newPass1, setNewPass1] = useState('');
   const [newPass2, setNewPass2] = useState('');
@@ -169,9 +189,13 @@ export default function App() {
     const cachedUser = getCurrentUser();
 
     if (!token || !cachedUser?.emp_id) return;
-    if (!isSupabaseConfigured()) {
+    if (isMockMode()) {
       setIsLoggedIn(true);
       setCurrentUser(cachedUser);
+      return;
+    }
+    if (!isSupabaseConfigured()) {
+      clearSession();
       return;
     }
 
@@ -210,7 +234,9 @@ export default function App() {
       const userVal = empId.trim();
       const passVal = password;
 
-      const allowMockLogin = !isSupabaseConfigured();
+      // เดิมเปิดเมื่อ config หาย ซึ่งแปลว่า production ที่ตั้งค่าพลาดจะรับ admin/admin123 ได้
+      // ตอนนี้เปิดเฉพาะ dev บนเครื่องตัวเองที่ใส่ ?mock=1 เท่านั้น
+      const allowMockLogin = isMockMode();
 
       // Offline mock account checks
       if (allowMockLogin && userVal.toLowerCase() === 'admin' && (passVal === 'admin' || passVal === 'admin123')) {
@@ -222,7 +248,7 @@ export default function App() {
           department: 'IT',
           points: 9999
         };
-        setSession('mock_admin_token', adminUser, passVal);
+        setSession('mock_admin_token', adminUser);
         if (passVal === 'admin') {
           setFirstLoginEmpId('ADMIN');
           setShowFirstLogin(true);
@@ -246,7 +272,7 @@ export default function App() {
             department: 'Production',
             points: 1250
           };
-          setSession('mock_temp_token', tempUser, passVal);
+          setSession('mock_temp_token', tempUser);
           setFirstLoginEmpId('3672');
           setShowFirstLogin(true);
           setShowLoginModal(false);
@@ -261,7 +287,7 @@ export default function App() {
             department: 'Production',
             points: 1250
           };
-          setSession('mock_user_token', testUser, passVal);
+          setSession('mock_user_token', testUser);
           setCurrentUser(testUser);
           setIsLoggedIn(true);
           setShowLoginModal(false);
@@ -281,7 +307,7 @@ export default function App() {
 
       if (res.status === 'success' && res.mustChangePassword) {
         if (res.token && res.user) {
-          setSession(res.token, res.user, passVal);
+          setSession(res.token, res.user);
           setCurrentUser(res.user);
         }
         setFirstLoginEmpId(userVal);
@@ -291,7 +317,7 @@ export default function App() {
       }
 
       if (res.status === 'success' && res.token && res.user) {
-        setSession(res.token, res.user, passVal);
+        setSession(res.token, res.user);
         setCurrentUser(res.user);
         setIsLoggedIn(true);
         setShowLoginModal(false);
@@ -309,7 +335,7 @@ export default function App() {
   // Handle First Time Password Change
   async function submitFirstPasswordChange() {
     if (!isPasswordValid(newPass1)) {
-      showError(new Error('รหัสใหม่ต้องเป็น A-Z, a-z, 0-9 จำนวน 8 ตัวพอดี'));
+      showError(new Error(PASSWORD_RULE_TEXT));
       return;
     }
 
@@ -327,7 +353,7 @@ export default function App() {
       const targetEmp = firstLoginEmpId || empId.trim();
 
       // Offline mock account change password bypass
-      if (!isSupabaseConfigured() && targetEmp === '3672') {
+      if (isMockMode() && targetEmp === '3672') {
         const testUser = {
           emp_id: '3672',
           full_name: 'คุณพนักงานทดสอบ (Test Employee)',
@@ -336,7 +362,7 @@ export default function App() {
           department: 'Production',
           points: 1250
         };
-        setSession('mock_user_token', testUser, newPass1);
+        setSession('mock_user_token', testUser);
         setCurrentUser(testUser);
         setIsLoggedIn(true);
         setShowFirstLogin(false);
@@ -357,17 +383,17 @@ export default function App() {
       }
 
       const token = getToken();
-      const currentPassword = getTempPassword() || password;
 
       if (token) {
+        // ฐานข้อมูลอนุญาตให้เว้นรหัสเดิมได้เมื่อบัญชีอยู่ในโหมดบังคับเปลี่ยนรหัส
+        // (session token คือหลักฐานตัวตนอยู่แล้ว) เราจึงไม่ต้องเก็บ plaintext ไว้ในเบราว์เซอร์
         await rpc('change_my_password', {
           p_token: token,
-          p_current_password: currentPassword,
+          p_current_password: null,
           p_new_password: newPass1,
           p_confirm_password: newPass2,
         });
 
-        clearTempPassword();
         setIsLoggedIn(true);
         setShowFirstLogin(false);
         return;
@@ -377,6 +403,31 @@ export default function App() {
     } catch (error) {
       showError(error);
     }
+  }
+
+  // ส่งคำขอลืมรหัสผ่าน ระบบจะอีเมลรหัสชั่วคราวไปหาผู้ดูแล ไม่ส่งกลับมาที่หน้าเว็บ
+  async function submitForgotPassword(event: FormEvent) {
+    event.preventDefault();
+    const target = forgotEmpId.trim();
+    if (!target) {
+      showError(new Error('กรุณากรอกรหัสพนักงาน'));
+      return;
+    }
+    setForgotBusy(true);
+    try {
+      const message = await requestPasswordReset(target);
+      setForgotDone(message);
+    } catch (error) {
+      showError(error);
+    } finally {
+      setForgotBusy(false);
+    }
+  }
+
+  function closeForgot() {
+    setShowForgot(false);
+    setForgotEmpId('');
+    setForgotDone('');
   }
 
   const handleLogout = () => {
@@ -429,9 +480,17 @@ export default function App() {
   if (isLoggedIn && currentUser) {
     const role = String(currentUser.role || '').toLowerCase();
     if (['admin', 'admin_it', 'dev'].includes(role)) {
-      return <AdminDashboard user={currentUser} onLogout={handleLogout} />;
+      return (
+        <Suspense fallback={<AppLoader visible label="กำลังโหลดหน้าจอ" />}>
+          <AdminDashboard user={currentUser} onLogout={handleLogout} />
+        </Suspense>
+      );
     } else {
-      return <UserDashboard user={currentUser} onLogout={handleLogout} />;
+    return (
+      <Suspense fallback={<AppLoader visible label="กำลังโหลดหน้าจอ" />}>
+        <UserDashboard user={currentUser} onLogout={handleLogout} />
+      </Suspense>
+    );
     }
   }
 
@@ -505,7 +564,7 @@ export default function App() {
             เข้าสู่ระบบ (Login to Connect)
           </button>
           <p className="text-[10px] text-white/50 font-bold leading-normal">
-            รหัสผ่านเริ่มต้นคือรหัสพนักงาน สำหรับการเปิดใช้งานครั้งแรก
+            เข้าใช้งานครั้งแรก ใช้รหัสเริ่มต้นที่บริษัทแจ้ง แล้วตั้งรหัสใหม่ของตัวเอง
           </p>
         </div>
       </div>
@@ -592,10 +651,99 @@ export default function App() {
               </button>
             </div>
 
-            <div className="mt-5 rounded-2xl border border-white/10 bg-black/25 px-4 py-2.5 text-center text-[10px] font-bold leading-normal text-white/80 shadow-inner">
-              * สมาชิกใหม่กรุณาใช้รหัสพนักงานเป็นรหัสผ่านเริ่มต้น
+            <button
+              type="button"
+              onClick={() => {
+                setForgotEmpId(empId.trim());
+                setForgotDone('');
+                setShowForgot(true);
+              }}
+              className="mt-3 w-full text-center text-[11px] font-black text-white/85 underline underline-offset-4 hover:text-white transition"
+            >
+              ลืมรหัสผ่าน?
+            </button>
+
+            <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 px-4 py-2.5 text-center text-[10px] font-bold leading-normal text-white/80 shadow-inner">
+              * เข้าใช้งานครั้งแรก ใช้รหัสเริ่มต้นที่บริษัทแจ้ง แล้วระบบจะให้ตั้งรหัสใหม่ทันที
             </div>
           </form>
+        </div>
+      )}
+
+      {/* FORGOT PASSWORD POPUP */}
+      {showForgot && (
+        <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/60 p-4 backdrop-blur-md animate-fade-in">
+          <div className="w-full max-w-sm rounded-[32px] bg-slate-900 border border-slate-800 p-6 text-slate-200 shadow-2xl relative animate-scale-in">
+            <button
+              type="button"
+              onClick={closeForgot}
+              className="absolute top-4 right-4 p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-slate-300 transition"
+            >
+              <X size={16} />
+            </button>
+
+            <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <LockKeyhole size={22} />
+            </div>
+            <h3 className="text-base font-black text-center text-white">ลืมรหัสผ่าน</h3>
+
+            {forgotDone ? (
+              <>
+                <p className="text-xs text-center text-emerald-400 font-bold mt-3 leading-relaxed">
+                  {forgotDone}
+                </p>
+                <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-[11px] font-bold leading-relaxed text-slate-400">
+                  ผู้ดูแลระบบจะติดต่อกลับเพื่อแจ้งรหัสชั่วคราว 6 หลัก
+                  <br />
+                  นำรหัสนั้นมาใส่ในช่องรหัสผ่านแทนรหัสเดิม แล้วระบบจะให้ตั้งรหัสใหม่ทันที
+                  <br />
+                  <span className="text-slate-500">
+                    รหัสผ่านเดิมของคุณยังใช้ได้อยู่ จนกว่าจะใช้รหัสชั่วคราว
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeForgot}
+                  className="mt-5 w-full rounded-2xl bg-white py-3 text-xs font-black text-slate-950 active:scale-95 transition"
+                >
+                  ปิด
+                </button>
+              </>
+            ) : (
+              <form onSubmit={submitForgotPassword}>
+                <p className="text-xs text-center text-slate-400 font-bold mt-1 mb-5 leading-relaxed">
+                  กรอกรหัสพนักงานของคุณ ระบบจะแจ้งผู้ดูแลให้ออกรหัสชั่วคราวให้
+                </p>
+
+                <label className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                  รหัสพนักงาน (Employee ID)
+                </label>
+                <div className="flex h-12 items-center gap-3 rounded-2xl border border-slate-700 bg-slate-950/70 px-3">
+                  <UserRound size={18} className="shrink-0 text-slate-500" />
+                  <input
+                    value={forgotEmpId}
+                    onChange={(event) => setForgotEmpId(event.target.value)}
+                    className="h-10 w-full bg-transparent text-xs font-bold text-slate-100 outline-none placeholder:text-slate-600"
+                    placeholder="ระบุรหัสพนักงาน"
+                    autoComplete="username"
+                    maxLength={40}
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={forgotBusy}
+                  className="mt-5 w-full rounded-2xl bg-amber-500 py-3 text-xs font-black text-slate-950 active:scale-95 transition disabled:opacity-70 disabled:cursor-wait"
+                >
+                  {forgotBusy ? 'กำลังส่งคำขอ...' : 'ส่งคำขอไปยังผู้ดูแลระบบ'}
+                </button>
+
+                <p className="mt-3 text-center text-[10px] font-bold text-slate-500 leading-relaxed">
+                  ขอได้สูงสุด 3 ครั้งต่อวัน
+                </p>
+              </form>
+            )}
+          </div>
         </div>
       )}
 

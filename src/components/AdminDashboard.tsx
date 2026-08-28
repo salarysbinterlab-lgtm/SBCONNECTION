@@ -326,12 +326,15 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
     }
     setResetLoading(true);
     try {
-      await rpc('admin_reset_password', {
+      const result = await rpc<any>('admin_reset_password', {
         p_token: token,
         p_emp_id: resetEmpId.trim(),
-        p_temp_password: resetTempPass.trim()
+        p_temp_password: resetTempPass.trim() || null
       });
-      showSuccess(lang === 'th' ? `รีเซ็ตรหัสผ่านพนักงาน ${resetEmpId} เรียบร้อยแล้ว!` : `Reset password for ${resetEmpId} successfully!`);
+      // ข้อความจากฐานข้อมูลบอกรหัสที่ต้องใช้และวันหมดอายุของหน้าต่างเข้าครั้งแรก
+      showNotice(result?.message || (lang === 'th'
+        ? `เปิดให้พนักงาน ${resetEmpId} ตั้งรหัสผ่านครั้งแรกแล้ว`
+        : `Opened first-login for ${resetEmpId}`));
       setResetEmpId('');
       setResetTempPass('');
       if (activeModule === 'dashboard') fetchData();
@@ -444,8 +447,13 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
         };
       }
 
-      await rpc(config.save, { p_token: token, p_payload: payload });
-      showSuccess(lang === 'th' ? 'บันทึกข้อมูลเรียบร้อยแล้ว!' : 'Saved successfully!');
+      const saveResult = await rpc<any>(config.save, { p_token: token, p_payload: payload });
+      if (activeModule === 'users' && saveResult?.temp_password) {
+        // พนักงานใหม่ (หรือคนที่ยังไม่มีรหัสผ่าน) ระบบเปิดหน้าต่างเข้าครั้งแรกให้อัตโนมัติ
+        showNotice(saveResult.message);
+      } else {
+        showSuccess(lang === 'th' ? 'บันทึกข้อมูลเรียบร้อยแล้ว!' : 'Saved successfully!');
+      }
       setModalOpen(false);
       setEditingRow(null);
       fetchData();
@@ -668,6 +676,13 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
     if (swal) swal.fire({ icon: 'error', title: 'ล้มเหลว', text: msg, background: darkMode ? '#0f172a' : '#fff', color: darkMode ? '#fff' : '#0f172a' });
     else alert(msg);
   };
+  // ข้อความที่มีรหัสชั่วคราวอยู่ข้างใน ต้องไม่ปิดเอง แอดมินต้องมีเวลาอ่าน/จด
+  const showNotice = (msg: string) => {
+    const swal = (window as any).Swal;
+    if (swal) swal.fire({ icon: 'info', title: lang === 'th' ? 'แจ้งพนักงานตามนี้' : 'Tell the employee', text: msg, confirmButtonText: 'OK', background: darkMode ? '#0f172a' : '#fff', color: darkMode ? '#fff' : '#0f172a' });
+    else alert(msg);
+  };
+
   const showSuccess = (msg: string) => {
     const swal = (window as any).Swal;
     if (swal) swal.fire({ icon: 'success', title: 'สำเร็จ', text: msg, timer: 1800, showConfirmButton: false, background: darkMode ? '#0f172a' : '#fff', color: darkMode ? '#fff' : '#0f172a' });

@@ -2,8 +2,12 @@
 // Deploy: Web app / Execute as Me / Anyone with link
 // Handles Drive uploads, audit logs, and the SB Connect Quotation service.
 //
-// Required Script Properties (legacy upload/audit):
-//   UPLOAD_TOKEN, AUDIT_SHEET_ID, FOLDER_PROFILE_ID, FOLDER_NEWS_ID,
+// การยืนยันตัวตน: ทุกคำขอต้องส่ง sessionToken ของผู้ใช้ แล้วสคริปต์จะเอาไปถาม
+// validate_public_session กับ Supabase ก่อนทำงานเสมอ ไม่มี shared token ในหน้าเว็บแล้ว
+// (Script Property UPLOAD_TOKEN เลิกใช้แล้ว ลบทิ้งได้)
+//
+// Required Script Properties (upload):
+//   AUDIT_SHEET_ID, FOLDER_PROFILE_ID, FOLDER_NEWS_ID,
 //   FOLDER_MISSIONS_ID, FOLDER_REWARD_ID
 // Optional legacy properties:
 //   FOLDER_MISSION_EVIDENCE_ID, FOLDER_ATTACHMENTS_ID
@@ -94,8 +98,10 @@ function prop(name, fallback) {
   return scriptProps().getProperty(name) || fallback || "";
 }
 
+// เลิกใช้แล้ว: เดิมเป็น shared secret ที่ต้องฝังอยู่ในหน้าเว็บ ทำให้ใครก็อ่านได้
+// คงฟังก์ชันไว้เพื่อไม่ให้โค้ดเก่าที่อาจอ้างถึงพัง แต่ไม่มีเส้นทางไหนเรียกใช้อีกแล้ว
 function uploadToken() {
-  return prop("UPLOAD_TOKEN", "CHANGE_THIS_TOKEN_TO_MATCH_FRONTEND");
+  return "";
 }
 
 function auditSheetId() {
@@ -153,22 +159,39 @@ function doPost(e) {
     quotationUpload = isQuotationBucket_(resolvedBucket);
     var sessionUpload = !quotationAction && !quotationUpload && isAppUploadRequest_(requestType, resolvedBucket);
 
-    // Quotation requests use the user's live Supabase session. A service-role key
-    // remains only in Script Properties and is never returned to the browser.
-    if (quotationAction || quotationUpload) {
-      body._validatedSession = validateQuotationSession_(body.sessionToken || body.session_token || "");
-    } else if (sessionUpload && (body.sessionToken || body.session_token)) {
-      body._validatedSession = validateQuotationSession_(body.sessionToken || body.session_token || "");
-      validateAppUploadAuthorization_(body._validatedSession, resolvedBucket, body.meta || {});
-    } else if (body.token !== uploadToken()) {
+    // "ลืมรหัสผ่าน" เป็นคำขอเดียวที่ไม่ต้องมี session เพราะผู้ใช้เข้าระบบไม่ได้อยู่แล้ว
+    // ความปลอดภัยอยู่ที่ฝั่งฐานข้อมูล: จำกัดจำนวนคำขอ ตอบข้อความเดียวกันเสมอ
+    // และรหัส 6 หลักไม่เคยถูกส่งกลับไปที่เบราว์เซอร์ ส่งเข้าอีเมลผู้ดูแลอย่างเดียว
+    if (requestType === "password_reset_request") {
+      return handlePasswordResetRequest_(body);
+    }
+
+    // ทุกคำขอที่เหลือต้องมี session token ของผู้ใช้จริง แล้วเอาไปยืนยันกับ Supabase อีกที
+    // (เดิมมีทางลัด body.token === UPLOAD_TOKEN ซึ่งเป็น shared secret ที่ต้องฝังอยู่ใน
+    //  หน้าเว็บ = ใครเปิด DevTools ก็อ่านได้ และอัปโหลดไฟล์เข้า Drive บริษัทได้)
+    // service-role key ยังอยู่ใน Script Properties อย่างเดียว ไม่เคยส่งกลับไปที่เบราว์เซอร์
+    var incomingSession = body.sessionToken || body.session_token || "";
+    if (!incomingSession) {
       return jsonOutput({ status: "error", ok: false, message: "Unauthorized" });
+    }
+    body._validatedSession = validateQuotationSession_(incomingSession);
+
+    if (sessionUpload) {
+      validateAppUploadAuthorization_(body._validatedSession, resolvedBucket, body.meta || {});
     }
 
     if (quotationAction) {
       return handleQuotationAction_(requestType, body);
     }
-    if (requestType === "log") return appendAuditLog(body.log || body);
-    if (requestType === "log_batch") return appendAuditLogBatch(body.logs || []);
+    // การเขียน audit log ย้ายไปทำฝั่งฐานข้อมูลแล้ว (public.activity_logs / admin_audit_logs)
+    // log ที่ยิงมาจากเบราว์เซอร์ปลอมได้และหายได้ จึงใช้เป็นหลักฐานไม่ได้
+    if (requestType === "log" || requestType === "log_batch") {
+      return jsonOutput({
+        status: "error",
+        ok: false,
+        message: "Client-side audit logging is disabled. Audit trail is written server-side in Supabase."
+      });
+    }
 
     return handleDriveUpload_(body, legacyType, resolvedBucket, quotationUpload);
   } catch (err) {
@@ -2683,4 +2706,107 @@ function doGet() {
     quotationActions: QUOTATION_ACTIONS.slice(0),
     quotationBuckets: ["quotation", "quotations", "quotation_pdf", "quotation_images", "quotation_attachments"]
   });
+}
+
+
+// =============================================================================
+// ลืมรหัสผ่าน - รับคำขอจากหน้า login แล้วส่งอีเมลแจ้งผู้ดูแลระบบ
+// =============================================================================
+
+var PASSWORD_RESET_RPC = "request_password_reset";
+var PASSWORD_RESET_MARK_RPC = "mark_password_reset_notified";
+
+function handlePasswordResetRequest_(body) {
+  // ตอบข้อความเดียวกันเสมอ ไม่ว่าจะมีรหัสพนักงานนี้จริงหรือไม่ หรือโดนจำกัดจำนวนครั้ง
+  // เพื่อไม่ให้ใครใช้หน้านี้ไล่เดาว่ารหัสพนักงานไหนมีอยู่ในระบบ
+  var GENERIC = {
+    status: "success",
+    ok: true,
+    message: "ส่งคำขอเรียบร้อยแล้ว ผู้ดูแลระบบจะติดต่อกลับเพื่อแจ้งรหัสชั่วคราวให้"
+  };
+
+  var empId = String((body && (body.empId || body.emp_id)) || "").trim();
+  if (!empId || empId.length > 40) return jsonOutput(GENERIC);
+
+  var payload;
+  try {
+    var response = quotationSupabaseRequest_("rpc/" + PASSWORD_RESET_RPC, "post", {
+      p_emp_id: empId,
+      p_user_agent: String((body && body.userAgent) || "").slice(0, 400),
+      p_source_ip: ""
+    });
+    if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) {
+      return jsonOutput(GENERIC);
+    }
+    payload = JSON.parse(response.getContentText() || "null");
+  } catch (err) {
+    return jsonOutput(GENERIC);
+  }
+
+  if (!payload || payload.send_email !== true) return jsonOutput(GENERIC);
+
+  var to = String(payload.notify_email || prop("PASSWORD_RESET_NOTIFY_EMAIL", "sbinterlab.carbeau@gmail.com")).trim();
+  if (!to) return jsonOutput(GENERIC);
+
+  var emp = payload.employee || {};
+  var expires = formatBangkokTime_(payload.expires_at);
+
+  var lines = [
+    "มีพนักงานขอรหัสผ่านชั่วคราว (ลืมรหัสผ่าน)",
+    "",
+    "รหัสชั่วคราว 6 หลัก : " + payload.code,
+    "ใช้ได้ถึง            : " + expires,
+    "",
+    "--------------------------------------------",
+    "ข้อมูลพนักงาน",
+    "--------------------------------------------",
+    "รหัสพนักงาน  : " + (emp.emp_id || "-"),
+    "ชื่อ-นามสกุล  : " + (emp.full_name || "-"),
+    "ชื่อเล่น      : " + (emp.nickname || "-"),
+    "แผนก        : " + (emp.department || "-"),
+    "ตำแหน่ง      : " + (emp.position || "-"),
+    "เบอร์โทร     : " + (emp.phone || "-"),
+    "อีเมล        : " + (emp.email || "-"),
+    "",
+    "เวลาที่ขอ    : " + formatBangkokTime_(new Date().toISOString()),
+    "",
+    "--------------------------------------------",
+    "วิธีดำเนินการ",
+    "--------------------------------------------",
+    "1. ยืนยันตัวตนพนักงานก่อน (โทรกลับ หรือถามหัวหน้าแผนก)",
+    "2. แจ้งรหัส 6 หลักข้างบนให้พนักงาน",
+    "3. พนักงานเอารหัสนี้ไปใส่ในช่องรหัสผ่านที่หน้า login แทนรหัสเดิม",
+    "4. ระบบจะบังคับให้ตั้งรหัสใหม่ทันทีที่เข้าได้",
+    "",
+    "หมายเหตุ: รหัสนี้ใช้ได้ครั้งเดียว และรหัสผ่านเดิมของพนักงานยังใช้ได้อยู่จนกว่าจะใช้รหัสนี้",
+    "ถ้าพนักงานไม่ได้เป็นคนขอเอง ไม่ต้องแจ้งรหัส ปล่อยให้หมดอายุไปเอง"
+  ];
+
+  try {
+    MailApp.sendEmail({
+      to: to,
+      subject: "[SB Connect] ขอรหัสผ่านชั่วคราว - " + (emp.emp_id || empId) + " " + (emp.full_name || ""),
+      body: lines.join("\n")
+    });
+  } catch (mailErr) {
+    // ส่งเมลไม่ได้ ก็ยังตอบข้อความกลาง ๆ ให้ผู้ใช้ ผู้ดูแลตามดูได้ที่ v_password_reset_pending
+    return jsonOutput(GENERIC);
+  }
+
+  try {
+    quotationSupabaseRequest_("rpc/" + PASSWORD_RESET_MARK_RPC, "post", { p_request_id: payload.request_id });
+  } catch (markErr) {
+    // ไม่เป็นไร แค่ไม่ได้ประทับเวลาว่าส่งเมลแล้ว
+  }
+
+  return jsonOutput(GENERIC);
+}
+
+function formatBangkokTime_(isoString) {
+  try {
+    var d = isoString ? new Date(isoString) : new Date();
+    return Utilities.formatDate(d, "Asia/Bangkok", "dd/MM/yyyy HH:mm") + " น.";
+  } catch (err) {
+    return String(isoString || "");
+  }
 }

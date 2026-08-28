@@ -5,10 +5,15 @@
 DO $$
 DECLARE
   v_admin_emp_id text := 'ADMIN';
-  v_admin_password text := 'Admin123'; -- 8 characters, no Thai
+  -- ต้องเปลี่ยนบรรทัดนี้ก่อนรันทุกครั้ง สคริปต์จะไม่ยอมรันถ้ายังเป็นค่าตัวอย่าง
+  v_admin_password text := 'CHANGE_ME_BEFORE_RUN';
 BEGIN
+  IF v_admin_password IN ('CHANGE_ME_BEFORE_RUN', 'Admin123', '1234', v_admin_emp_id) THEN
+    RAISE EXCEPTION 'ตั้งค่า v_admin_password เป็นรหัสของคุณเองก่อนรันไฟล์นี้ (ห้ามใช้ค่าตัวอย่าง)';
+  END IF;
+
   IF NOT public.sb_is_valid_password(v_admin_password) THEN
-    RAISE EXCEPTION 'Admin password must be exactly 8 characters and no Thai characters';
+    RAISE EXCEPTION 'รหัสผ่านต้องยาว 8-72 ตัว มีทั้งตัวอักษรและตัวเลข ห้ามเว้นวรรคและห้ามภาษาไทย';
   END IF;
 
   INSERT INTO public.app_users(

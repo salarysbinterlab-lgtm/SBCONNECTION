@@ -1,3 +1,7 @@
+> ⚠️ เอกสารนี้ใช้ไม่ได้แล้ว โฟลเดอร์ `app/` และ `public/app/` ถูกเลิกใช้
+> โปรเจกต์เหลือ React ชุดเดียวใน `src/` และ config ย้ายไป `.env` (`VITE_*`)
+> ดู [RUNBOOK.md](RUNBOOK.md) และ [../CLEANUP_TODO.md](../CLEANUP_TODO.md)
+
 # FRONTEND MAP / WHERE TO EDIT
 
 ## ห้ามแก้ดีไซน์หลักโดยไม่จำเป็น

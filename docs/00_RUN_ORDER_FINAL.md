@@ -1,3 +1,5 @@
+> ⚠️ เอกสารนี้ล้าสมัยแล้ว ลำดับรันที่ถูกต้อง (รวม `17_` และ `18_`) อยู่ใน [RUNBOOK.md](RUNBOOK.md)
+
 # RUN ORDER FINAL - SB Connect Supabase + Legacy UI
 
 ## ใช้ไฟล์ไหน / ไม่ใช้ไฟล์ไหน

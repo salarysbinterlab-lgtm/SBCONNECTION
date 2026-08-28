@@ -1,49 +1,65 @@
-# SB Connect TOONHUB Login Full Assets Final
+# SB Connect
 
-ชุดนี้คือ full package:
-- หน้าแรก TOONHUB React/Vite/Tailwind
-- Login อยู่หน้าแรก
-- รูปหมุนเองทุก 3 วิ
-- assets/js legacy + Supabase modules ครบ
-- assets/css legacy ครบ
-- pages HTML legacy ครบ
-- sql final ครบ
-- Apps Script Drive upload ถ้ามีในฐานก่อนหน้า
+แอปสะสมคะแนนภายในบริษัท — React + Vite + Tailwind + Supabase (PWA)
 
-## ใช้งาน
+พนักงานเช็คอินรายวัน อ่านข่าว ทำภารกิจ แลกของรางวัล ดูอันดับ
+แอดมินจัดการผู้ใช้ ข่าว ภารกิจ ของรางวัล และดูประวัติแต้มทั้งหมด
 
-1. ติดตั้ง dependencies ด้วย `npm install`
-2. ตรวจ config ที่ `public/app/assets/js/sbConfig.js` ซึ่งเป็น source of truth สำหรับไฟล์ที่ deploy
-3. รัน `npm run check`
-4. เปิด dev server ด้วย `npm run dev`
+> **เอกสารหลักอยู่ที่ [`docs/RUNBOOK.md`](docs/RUNBOOK.md)** — ลำดับรัน SQL, การตั้งค่า, ขั้นตอนก่อนขึ้นจริง
+> ไฟล์อื่นใน `docs/` เป็นบันทึกงานรายรอบ ใช้เป็นประวัติเท่านั้น
 
-สำหรับทดสอบ UI ด้วยข้อมูลจำลองบนเครื่องเท่านั้น เปิด `http://127.0.0.1:5175/?mock=1`
-โหมดนี้ทำงานเฉพาะ Vite development บน `localhost`/`127.0.0.1` และไม่ถูกเปิดใน production build
+---
 
-หรือ:
+## เริ่มใช้งาน
 
-```bat
-cd /d D:\Projectsbconnect_app
-rmdir /s /q node_modules
-del package-lock.json
+```bash
+cp .env.example .env     # แล้วใส่ค่าจริง 3 ตัว
 npm install
-npm run dev
+npm run dev              # http://127.0.0.1:5175/
 ```
 
-เปิด:
+ทดสอบ UI ด้วยข้อมูลจำลอง: `http://127.0.0.1:5175/?mock=1` (dev + localhost เท่านั้น)
 
-```text
-http://127.0.0.1:5173/
+ก่อน push ทุกครั้ง:
+
+```bash
+npm run check            # typecheck + test + build
 ```
 
-## Login
+---
 
-บัญชีใหม่ต้องถูกสร้างพร้อมรหัสผ่านชั่วคราวโดย Admin หรือ trusted provisioning job และระบบจะบังคับเปลี่ยนรหัสผ่านในการเข้าใช้ครั้งแรก
+## โครงสร้าง
 
-## Build GitHub
-
-```bat
-npm run check
+```
+src/                 React app (โค้ดชุดเดียวของโปรเจกต์)
+  App.tsx            หน้าแรก + login + บังคับเปลี่ยนรหัสครั้งแรก
+  components/        UserDashboard, AdminDashboard, QuotationWorkspace
+  helpers/api.ts     ชั้นเดียวที่คุยกับ Supabase (allowlist RPC อยู่ในนี้)
+  helpers/mockApi.ts ฐานข้อมูลจำลองสำหรับ dev เท่านั้น (dynamic import)
+sql/                 migration ทั้งหมด — ดูลำดับรันใน docs/RUNBOOK.md
+apps_script/         Google Apps Script สำหรับอัปโหลดไฟล์ขึ้น Drive
+public/              static asset + service worker
 ```
 
-ใช้ `dist/` deploy
+---
+
+## กติกาความปลอดภัยที่ห้ามละเมิด
+
+1. **ห้ามเปิดสิทธิ์ตารางให้ `anon`** — แอปคุยกับฐานผ่าน RPC เท่านั้น
+2. **เพิ่ม RPC ใหม่ = ต้องเพิ่มชื่อใน `ALLOWED_RPC` (`src/helpers/api.ts`)
+   และเพิ่ม `grant execute ... to anon` ใน `sql/17_SECURITY_HARDENING_AND_FIXES.sql` แล้วรัน `17_` ซ้ำ**
+   ถ้าลืม เทสต์ `securityContract` จะฟ้องเอง
+3. **ห้ามใส่ secret ลงใน `.env` ของ frontend** — ทุกค่า `VITE_*` ถูก build ติดไปกับ JS ที่ผู้ใช้โหลด
+   ใส่ได้เฉพาะ publishable/anon key
+4. **ห้ามเก็บรหัสผ่านผู้ใช้ไว้ในเบราว์เซอร์** — session token คือหลักฐานตัวตนอยู่แล้ว
+5. **ฟังก์ชันภายใน** (`add_point_transaction`, `process_checkin`, `sb_*`) ต้องถูก revoke จาก `anon` เสมอ
+
+ตรวจทั้งหมดได้ด้วย `sql/18_VERIFY_SECURITY.sql` (ทุก CHECK ต้องได้ 0 แถว)
+
+---
+
+## Deploy
+
+push ขึ้น `main` → GitHub Actions รัน `npm run check` แล้ว deploy ขึ้น Cloudflare Workers
+
+GitHub Pages ถูกปิดถาวร (สาธารณะเสมอ ไม่เหมาะกับแอปภายในบริษัท)

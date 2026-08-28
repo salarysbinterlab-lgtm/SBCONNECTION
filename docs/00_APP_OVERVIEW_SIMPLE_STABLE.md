@@ -1,3 +1,5 @@
+> ⚠️ ภาพรวมยังถูกต้อง แต่ส่วน "รอบนี้เอาออก" ยังไม่ได้ทำจริง ดู [../CLEANUP_TODO.md](../CLEANUP_TODO.md)
+
 # SB Connect Stable Clean Overview
 
 แอปนี้ไม่ได้ซับซ้อน แกนที่ถูกต้องคือ:

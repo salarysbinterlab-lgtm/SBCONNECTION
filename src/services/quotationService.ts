@@ -830,15 +830,9 @@ function endpointLooksLikePlaceholder(endpoint: string): boolean {
   return !endpoint || /PASTE_|YOUR_|EXAMPLE|WEB_APP_URL_HERE/i.test(endpoint);
 }
 
-function tokenLooksLikePlaceholder(token: string): boolean {
-  return !token || /CHANGE_|PASTE_|YOUR_|MATCH_APPS_SCRIPT/i.test(token);
-}
-
-function transportSettings(): { endpoint: string; token: string; mock: boolean } {
-  const config = getConfig() as { driveUploadEndpoint?: string; driveUploadToken?: string };
-  const endpoint = text(config.driveUploadEndpoint);
-  const token = text(config.driveUploadToken);
-  if (endpointLooksLikePlaceholder(endpoint)) return { endpoint, token, mock: true };
+function transportSettings(): { endpoint: string; mock: boolean } {
+  const endpoint = text(getConfig().driveUploadEndpoint);
+  if (endpointLooksLikePlaceholder(endpoint)) return { endpoint, mock: true };
 
   let parsed: URL;
   try {
@@ -849,7 +843,7 @@ function transportSettings(): { endpoint: string; token: string; mock: boolean }
   if (!['http:', 'https:'].includes(parsed.protocol)) {
     throw new Error('Quotation API endpoint must use HTTP or HTTPS.');
   }
-  return { endpoint: parsed.toString(), token, mock: false };
+  return { endpoint: parsed.toString(), mock: false };
 }
 
 export function isQuotationMockMode(): boolean {
@@ -920,7 +914,7 @@ async function postJson(payload: UnknownRecord): Promise<unknown> {
       signal: controller.signal,
       body: JSON.stringify({
         ...payload,
-        ...(!tokenLooksLikePlaceholder(settings.token) ? { token: settings.token } : {}),
+        // ยืนยันตัวตนด้วย session token ของผู้ใช้เท่านั้น ไม่มี shared secret ในหน้าเว็บ
         sessionToken: sessionToken(),
         actor: currentActor(),
       }),

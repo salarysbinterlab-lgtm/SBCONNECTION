@@ -1,0 +1,9 @@
+# ค่าจริงของ SB Connect (ดึงมาจาก app/assets/js/sbConfig.js เดิม)
+# ไฟล์นี้อยู่ใน .gitignore แล้ว จะไม่ถูก commit ขึ้น GitHub
+#
+# ค่าทั้งหมดนี้ถูก build ติดไปกับไฟล์ JS ที่ผู้ใช้โหลด จึงต้องเป็นค่าที่เปิดเผยได้เท่านั้น
+# ห้ามใส่ service_role key หรือ shared token ใด ๆ ลงในไฟล์นี้เด็ดขาด
+
+VITE_SUPABASE_URL=https://tmcbblwfucwauksenqqr.supabase.co
+VITE_SUPABASE_ANON_KEY=sb_publishable__eAshDr5vo6TBNDJ4VNRUg_tRPp2Wov
+VITE_DRIVE_UPLOAD_ENDPOINT=https://script.google.com/macros/s/AKfycbyulDl7wAwfVkCyW6X1gNGrYhL6yzYdgtWVwdkPwMieKHntlr4_qapXqaRQ6ewLl02J-w/exec

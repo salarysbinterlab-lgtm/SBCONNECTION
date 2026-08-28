@@ -26,7 +26,24 @@ const migrations = [
   '14_LEGACY_RPC_ALIASES_FOR_REACT_APP.sql',
   '15_QUOTATION_SUPABASE_SCHEMA.sql',
   '16_FRONTEND_RPC_COMPLETION_AND_AUTH_HARDENING.sql',
+  // ปิดสิทธิ์ทั้งหมดแล้ว grant กลับเฉพาะ RPC ที่ frontend ใช้จริง
+  '17_SECURITY_HARDENING_AND_FIXES.sql',
+  // ระบบรหัสกลางเข้าครั้งแรก ต้องมาหลัง 17_ เพราะแทนที่ login/change_password แล้ว grant กลับเอง
+  '19_FIRST_LOGIN_SHARED_PASSWORD.sql',
+  // ระบบลืมรหัสผ่าน ต้องมาหลัง 19_ เพราะแทนที่ login/change_password อีกรอบ
+  '20_PASSWORD_RESET_REQUEST.sql',
 ];
+
+// กันพลาด: bundle ต้องจบด้วยชุด lockdown เสมอ ไม่งั้นได้ฐานข้อมูลที่เปิดช่องให้ anon
+const expectedTail = [
+  '17_SECURITY_HARDENING_AND_FIXES.sql',
+  '19_FIRST_LOGIN_SHARED_PASSWORD.sql',
+  '20_PASSWORD_RESET_REQUEST.sql',
+];
+const tail = migrations.slice(-expectedTail.length);
+if (expectedTail.some((name, i) => tail[i] !== name)) {
+  throw new Error('bundle ต้องจบด้วยลำดับ ' + expectedTail.join(' -> '));
+}
 
 const sections = await Promise.all(migrations.map(async (name) => {
   const body = (await readFile(join(sqlDir, name), 'utf8')).trim();
