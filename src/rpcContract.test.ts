@@ -1,10 +1,17 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const root = resolve(import.meta.dirname, '..');
 
+// โฟลเดอร์ sql/ ถูก gitignore ไว้ เพราะมีข้อมูลส่วนบุคคลของพนักงานและรหัสกลาง
+// เครื่องของเราจะมีโฟลเดอร์นี้ -> ตรวจว่าทุก RPC ที่หน้าเว็บเรียก มีอยู่จริงใน SQL
+// เครื่อง CI ของ GitHub จะไม่มี -> ข้ามข้อนั้น ข้ออื่นยังตรวจตามปกติ
+const hasSqlDir = existsSync(join(root, 'sql'));
+const itWithSql = hasSqlDir ? it : it.skip;
+
 function filesUnder(directory: string, extension: RegExp): string[] {
+  if (!existsSync(directory)) return [];
   return readdirSync(directory).flatMap((name) => {
     const path = join(directory, name);
     return statSync(path).isDirectory() ? filesUnder(path, extension) : extension.test(path) ? [path] : [];
@@ -12,7 +19,7 @@ function filesUnder(directory: string, extension: RegExp): string[] {
 }
 
 describe('frontend/backend contract', () => {
-  it('defines every literal RPC used by the production React app', () => {
+  itWithSql('defines every literal RPC used by the production React app', () => {
     const source = filesUnder(join(root, 'src'), /\.(ts|tsx)$/)
       .filter((path) => !path.includes(`${join('src', 'dev')}`) && !path.endsWith('.test.ts'))
       .map((path) => readFileSync(path, 'utf8'))

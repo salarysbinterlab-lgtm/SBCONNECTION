@@ -1,0 +1,51 @@
+name: Deploy Cloudflare
+
+# workflow เดียวที่ deploy อัตโนมัติ
+# (deploy-github-pages.yml ถูกปิดไว้แล้ว เพราะ GitHub Pages เป็นสาธารณะเสมอ
+#  ส่วนแอปนี้เป็นระบบภายในบริษัท ควรอยู่หลัง Cloudflare Access เท่านั้น)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: cloudflare-production
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate and build
+        # ค่า VITE_* ถูก build ติดไปกับ bundle จึงต้องเป็นค่าที่เปิดเผยได้เท่านั้น
+        # (publishable/anon key) ห้ามใส่ secret ฝั่งเซิร์ฟเวอร์ลงในนี้เด็ดขาด
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_DRIVE_UPLOAD_ENDPOINT: ${{ vars.VITE_DRIVE_UPLOAD_ENDPOINT }}
+        run: |
+          test -n "$VITE_SUPABASE_URL"       || { echo "ยังไม่ได้ตั้ง repository variable VITE_SUPABASE_URL"; exit 1; }
+          test -n "$VITE_SUPABASE_ANON_KEY"  || { echo "ยังไม่ได้ตั้ง repository variable VITE_SUPABASE_ANON_KEY"; exit 1; }
+          npm run check
+
+      - name: Deploy to Cloudflare
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
