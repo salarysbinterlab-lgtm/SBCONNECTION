@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ranking Full - SB Connect</title>
+  <script>
+    if (!localStorage.getItem('sb_session_token')) {
+      location.replace('./');
+    }
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --mint-1: #075f56;
+      --mint-2: #99f6e4;
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: rgba(15, 23, 42, .12);
+      --gold: #f59e0b;
+      --silver: #94a3b8;
+      --bronze: #b45309;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Prompt, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(153, 246, 228, .55), transparent 32rem),
+        linear-gradient(135deg, #f8fafc, #ecfeff);
+    }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 18px;
+      background: linear-gradient(135deg, var(--mint-1), var(--mint-2));
+      box-shadow: 0 12px 28px rgba(15, 23, 42, .12);
+    }
+    .brand { color: #fff; min-width: 0; }
+    .brand strong { display: block; font-size: 15px; letter-spacing: .08em; }
+    .brand span { display: block; font-size: 10px; font-weight: 900; opacity: .78; }
+    .home-btn {
+      border: 1px solid rgba(255, 255, 255, .55);
+      background: rgba(255, 255, 255, .18);
+      color: #fff;
+      border-radius: 14px;
+      height: 38px;
+      padding: 0 14px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+    main { width: min(980px, calc(100% - 28px)); margin: 22px auto 44px; }
+    .hero {
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 20px;
+      background: rgba(255, 255, 255, .78);
+      box-shadow: 0 18px 48px rgba(15, 23, 42, .08);
+      overflow: hidden;
+    }
+    .hero h1 { margin: 0; font-size: clamp(22px, 4vw, 34px); font-weight: 900; }
+    .hero p { margin: 6px 0 0; color: var(--muted); font-size: 13px; font-weight: 700; }
+    .tools {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      margin: 16px 0;
+    }
+    input {
+      width: 100%;
+      height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 0 14px;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 800;
+      outline: none;
+      background: rgba(255, 255, 255, .86);
+    }
+    .count {
+      min-width: 96px;
+      display: grid;
+      place-items: center;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .list { display: grid; gap: 10px; }
+    .row {
+      display: grid;
+      grid-template-columns: 54px 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: rgba(255, 255, 255, .88);
+      box-shadow: 0 8px 24px rgba(15, 23, 42, .045);
+    }
+    .rank {
+      width: 42px;
+      height: 42px;
+      border-radius: 15px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 900;
+      background: #334155;
+    }
+    .rank.gold { background: linear-gradient(135deg, #f59e0b, #fde68a); color: #78350f; }
+    .rank.silver { background: linear-gradient(135deg, #94a3b8, #e2e8f0); color: #334155; }
+    .rank.bronze { background: linear-gradient(135deg, #b45309, #fed7aa); color: #431407; }
+    .name { min-width: 0; }
+    .name strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+    .name span { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; font-weight: 800; }
+    .pts { color: #0f766e; font-size: 13px; font-weight: 900; white-space: nowrap; }
+    .empty {
+      text-align: center;
+      padding: 44px 12px;
+      color: var(--muted);
+      font-weight: 900;
+    }
+    @media (max-width: 560px) {
+      .row { grid-template-columns: 46px 1fr; }
+      .pts { grid-column: 2; justify-self: start; margin-top: -6px; }
+      .tools { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <strong>SB CONNECT</strong>
+      <span>RANKING FULL</span>
+    </div>
+    <button class="home-btn" onclick="location.href='./#home'">Home</button>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1>อันดับทั้งหมด</h1>
+      <p>รายการเต็มแยกออกจากหน้าหลัก เพื่อให้หน้า ranking หลักแสดงผลเร็วขึ้น</p>
+    </section>
+
+    <div class="tools">
+      <input id="search" placeholder="ค้นหา ชื่อ / รหัส / แผนก / บทบาท..." />
+      <div class="count" id="count">0 รายการ</div>
+    </div>
+
+    <section class="list" id="list"></section>
+  </main>
+
+  <script>
+    const parse = (key, fallback) => {
+      try { return JSON.parse(localStorage.getItem(key) || fallback); }
+      catch { return JSON.parse(fallback); }
+    };
+
+    const cached = parse('sb_ranking_cache', '[]');
+    const mockUsers = parse('mock_db_users', '[]');
+    const source = (cached.length ? cached : mockUsers)
+      .map((item) => ({
+        emp_id: item.emp_id || item.empId || '',
+        full_name: item.full_name || item.display_name || item.name || item.emp_id || '-',
+        department: item.department || item.dept || item.dept_th || '-',
+        role: item.role || item.app_role || 'user',
+        points: Number(item.points || 0)
+      }))
+      .sort((a, b) => b.points - a.points);
+
+    const list = document.getElementById('list');
+    const count = document.getElementById('count');
+    const search = document.getElementById('search');
+
+    function render() {
+      const q = search.value.trim().toLowerCase();
+      const rows = source.filter((item) => `${item.emp_id} ${item.full_name} ${item.department} ${item.role}`.toLowerCase().includes(q));
+      count.textContent = `${rows.length} รายการ`;
+      list.innerHTML = rows.length ? rows.map((item, idx) => {
+        const rank = idx + 1;
+        const cls = rank === 1 ? 'gold' : rank === 2 ? 'silver' : rank === 3 ? 'bronze' : '';
+        const crown = rank === 1 ? '♛ ' : '';
+        return `
+          <article class="row">
+            <div class="rank ${cls}">${crown}${rank}</div>
+            <div class="name">
+              <strong>${item.full_name}</strong>
+              <span>${item.emp_id} • ${item.department} • ${String(item.role).toUpperCase()}</span>
+            </div>
+            <div class="pts">${item.points.toLocaleString()} PTS</div>
+          </article>
+        `;
+      }).join('') : '<div class="empty">ไม่พบข้อมูลอันดับ</div>';
+    }
+
+    search.addEventListener('input', render);
+    render();
+  </script>
+</body>
+</html>

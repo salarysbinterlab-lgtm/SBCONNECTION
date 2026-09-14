@@ -1,0 +1,31 @@
+# ==========================================================================
+# ปิดการใช้งานถาวร - ลบไฟล์นี้ทิ้งได้เลย
+#
+# เหตุผล: GitHub Pages เปิดสาธารณะบนอินเทอร์เน็ตเสมอ
+# แอปนี้เป็นระบบภายในบริษัท และหน้าเว็บมี anon key ของ Supabase ติดไปด้วย
+# การเปิดสาธารณะ = ใครก็ตามที่เจอ URL ยิง RPC เข้าฐานข้อมูลได้
+#
+# เดิมไฟล์นี้ trigger ที่ push main พร้อมกับ deploy-cloudflare.yml
+# ทำให้มีเว็บสองชุดออนไลน์พร้อมกัน และไม่มีใครรู้ว่าอันไหนคือของจริง
+#
+# ให้ deploy ผ่าน Cloudflare อย่างเดียว แล้วปิดด้วย Cloudflare Access / IP allowlist
+# ==========================================================================
+
+name: Deploy GitHub Pages (DISABLED)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  disabled:
+    runs-on: ubuntu-latest
+    steps:
+      - name: อธิบายว่าทำไมถึงปิด
+        run: |
+          echo "workflow นี้ถูกปิดโดยตั้งใจ"
+          echo "แอปภายในบริษัทไม่ควร deploy ขึ้น GitHub Pages ซึ่งเป็นสาธารณะ"
+          echo "ใช้ deploy-cloudflare.yml แทน แล้วปิดด้วย Cloudflare Access"
+          exit 1

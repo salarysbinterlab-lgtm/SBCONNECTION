@@ -1,0 +1,75 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "th-TH"
+early_access: false
+
+reviews:
+  profile: "assertive"
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  review_status: true
+  review_details: true
+  enable_prompt_for_ai_agents: true
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 10
+    base_branches:
+      - "main"
+    ignore_title_keywords:
+      - "WIP"
+      - "[skip review]"
+  path_filters:
+    - "!dist/**"
+    - "!node_modules/**"
+    - "!*.log"
+    - "!vite.config.ts.timestamp-*.mjs"
+  path_instructions:
+    - path: "src/**"
+      instructions: |
+        Review as a production React/Vite/Tailwind PWA for employee use.
+        Focus on mobile Android rendering risks, especially fixed/sticky layers, backdrop-filter, mask-image, oversized media, text overlap, and touch ergonomics.
+        Flag changes that break role-based user/admin/dev flows or make installed PWA updates unreliable.
+    - path: "src/components/UserDashboard.tsx"
+      instructions: |
+        This is the main employee mobile dashboard. Review mobile layout carefully.
+        Check bottom navigation, ranking, profile card, point display, notifications, and service modal behavior.
+        Avoid suggestions that add heavy visual effects on Android unless performance is considered.
+    - path: "src/components/AdminDashboard.tsx"
+      instructions: |
+        Review admin features for role safety, accidental destructive actions, and data integrity.
+        Ensure admin-only workflows cannot be reached by ordinary users through client-side-only assumptions.
+    - path: "sql/**"
+      instructions: |
+        Review Supabase SQL for production safety.
+        Flag destructive reset/drop/truncate statements unless clearly marked dev-only.
+        Check RLS policies, SECURITY DEFINER functions, search_path safety, auth.uid() usage, and role escalation risks.
+    - path: ".github/workflows/**"
+      instructions: |
+        Review CI/CD as production deployment infrastructure.
+        Check Cloudflare deploy safety, secret usage, build determinism, and whether changes could deploy unreviewed broken code.
+    - path: "wrangler.jsonc"
+      instructions: |
+        Review Cloudflare Workers static assets config.
+        Ensure dist output, SPA fallback, and production worker naming remain correct.
+    - path: "public/manifest.webmanifest"
+      instructions: |
+        Review PWA install metadata for Android/iOS compatibility.
+        Check icon paths, background/theme colors, start_url, scope, and display mode.
+    - path: "public/sw.js"
+      instructions: |
+        Review service worker update behavior carefully.
+        Flag stale cache risks, broken offline paths, and changes that prevent installed users from receiving updates.
+    - path: "docs/**"
+      instructions: |
+        Review documentation for operational accuracy.
+        Flag instructions that could cause accidental production data loss, secret exposure, or deployment confusion.
+  tools:
+    gitleaks:
+      enabled: true
+
+chat:
+  auto_reply: true
+  art: false
+
