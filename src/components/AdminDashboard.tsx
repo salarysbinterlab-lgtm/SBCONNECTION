@@ -801,7 +801,7 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto">
+          <nav className="flex-1 min-h-0 px-3 space-y-0.5 overflow-y-auto">
             {sidebarItems.map(item => (
               <button key={item.id} onClick={() => setActiveModule(item.id as ModuleType)}
                 className="w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl text-xs font-black transition-all text-left relative"
@@ -1031,7 +1031,12 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
                           return (
                             <div key={idx} className="space-y-1">
                               <div className="flex justify-between text-xs font-bold">
-                                <span className="truncate">{idx + 1}. {item.full_name} ({item.department})</span>
+                                {/* ฐานข้อมูลส่ง display_name / dept_th มา แต่เดิมโค้ดอ่าน full_name / department
+                                    ซึ่งเป็น undefined ทั้งคู่ เลยโชว์เป็น "1. ()" ต้องอ่านเผื่อทั้งสองชื่อ */}
+                                <span className="truncate">
+                                  {idx + 1}. {item.display_name || item.full_name || item.emp_id || '-'}
+                                  {(item.dept_th || item.department) ? ` (${item.dept_th || item.department})` : ''}
+                                </span>
                                 <span style={{ color: thm.subtext }}>{Number(item.points).toLocaleString()}</span>
                               </div>
                               <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
@@ -1929,7 +1934,7 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
       {/* Sidebar - Mobile drawer overlay */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm lg:hidden animate-fade-in" onClick={() => setSidebarOpen(false)}>
-          <aside className="w-64 h-full bg-slate-900 flex flex-col p-4 relative" style={sidebarStyle} onClick={e => e.stopPropagation()}>
+          <aside className="w-64 h-full max-h-[100dvh] bg-slate-900 flex flex-col p-4 relative" style={sidebarStyle} onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center pb-4 mb-4 border-b border-slate-800">
               <div className="flex items-center gap-2">
                 <img
@@ -1944,7 +1949,9 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
               </button>
             </div>
 
-            <nav className="flex-1 space-y-1">
+            {/* flex-1 อย่างเดียวไม่พอ ต้องมี min-h-0 ด้วย ไม่งั้นกล่อง flex จะยืดตามจำนวนเมนู
+                แล้วดันปุ่มออกจากระบบตกจอ และไม่มีแถบเลื่อนให้เลื่อนลงไปกดด้วย */}
+            <nav className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-1 pr-1">
               {sidebarItems.map(item => (
                 <button key={item.id} onClick={() => { setActiveModule(item.id as ModuleType); setSidebarOpen(false); }}
                   className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-black transition-all text-left"
@@ -1962,7 +1969,7 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
             </nav>
 
             <button onClick={logout}
-              className="w-full flex items-center justify-center gap-2 py-3 bg-red-500/10 text-red-400 border border-red-500/20 rounded-2xl text-xs font-black mt-4">
+              className="w-full shrink-0 flex items-center justify-center gap-2 py-3 bg-red-500/10 text-red-400 border border-red-500/20 rounded-2xl text-xs font-black mt-4">
               <LogOut size={16} /> {t('logout_btn')}
             </button>
           </aside>

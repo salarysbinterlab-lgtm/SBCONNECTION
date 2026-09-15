@@ -98,42 +98,6 @@ function prop(name, fallback) {
   return scriptProps().getProperty(name) || fallback || "";
 }
 
-/**
- * ดึงเฉพาะรหัสไฟล์/โฟลเดอร์ของ Google Drive ออกมาจากค่าที่ตั้งไว้
- *
- * ปัญหาที่เจอจริง: เวลาก๊อปลิงก์โฟลเดอร์จาก Drive มาวางใน Script Properties
- * จะติดส่วนท้ายมาด้วย เช่น
- *   11ciSQ3zvCTiWzodtHs9LeyjOZmzmyuuo?usp=sharing
- *   https://drive.google.com/drive/folders/11ciSQ3zvCTiWzodtHs9LeyjOZmzmyuuo?usp=drive_link
- * แล้ว DriveApp.getFolderById() จะฟ้อง "รหัสไฟล์หรือโฟลเดอร์ไม่ถูกต้อง"
- * ฟังก์ชันนี้ตัดส่วนเกินทิ้งให้เอง จะวางแบบไหนก็ใช้ได้
- */
-function driveIdOnly_(value) {
-  var text = String(value == null ? "" : value).trim();
-  if (!text) return "";
-
-  // รูปแบบลิงก์ที่ Drive ใช้
-  var patterns = [
-    /\/folders\/([A-Za-z0-9_-]{10,})/,
-    /\/d\/([A-Za-z0-9_-]{10,})/,
-    /[?&]id=([A-Za-z0-9_-]{10,})/
-  ];
-  for (var i = 0; i < patterns.length; i += 1) {
-    var match = text.match(patterns[i]);
-    if (match) return match[1];
-  }
-
-  // ไม่ใช่ลิงก์ ก็ตัดทุกอย่างตั้งแต่ ? # / เป็นต้นไป แล้วเอาเฉพาะตัวอักษรที่ Drive ใช้
-  text = text.split("?")[0].split("#")[0];
-  var parts = text.split("/").filter(function (part) { return part !== ""; });
-  var last = parts.length ? parts[parts.length - 1] : "";
-  return last.replace(/[^A-Za-z0-9_-]/g, "");
-}
-
-function propId(name, fallback) {
-  return driveIdOnly_(prop(name, fallback));
-}
-
 // เลิกใช้แล้ว: เดิมเป็น shared secret ที่ต้องฝังอยู่ในหน้าเว็บ ทำให้ใครก็อ่านได้
 // คงฟังก์ชันไว้เพื่อไม่ให้โค้ดเก่าที่อาจอ้างถึงพัง แต่ไม่มีเส้นทางไหนเรียกใช้อีกแล้ว
 function uploadToken() {
@@ -141,26 +105,26 @@ function uploadToken() {
 }
 
 function auditSheetId() {
-  return propId("AUDIT_SHEET_ID", DEFAULT_AUDIT_SHEET_ID);
+  return prop("AUDIT_SHEET_ID", DEFAULT_AUDIT_SHEET_ID);
 }
 
 function quotationFolderId_() {
-  return propId("FOLDER_QUOTATION_ID", DEFAULT_QUOTATION_FOLDER_ID);
+  return prop("FOLDER_QUOTATION_ID", DEFAULT_QUOTATION_FOLDER_ID);
 }
 
 function quotationPdfFolderId_() {
-  return propId("FOLDER_QUOTATION_PDF_ID", DEFAULT_QUOTATION_PDF_FOLDER_ID);
+  return prop("FOLDER_QUOTATION_PDF_ID", DEFAULT_QUOTATION_PDF_FOLDER_ID);
 }
 
 function quotationImageFolderId_() {
-  return propId("FOLDER_QUOTATION_IMAGE_ID", DEFAULT_QUOTATION_IMAGE_FOLDER_ID);
+  return prop("FOLDER_QUOTATION_IMAGE_ID", DEFAULT_QUOTATION_IMAGE_FOLDER_ID);
 }
 
 function driveFolders() {
-  var profileId = propId("FOLDER_PROFILE_ID");
-  var newsId = propId("FOLDER_NEWS_ID");
-  var missionsId = propId("FOLDER_MISSIONS_ID");
-  var rewardId = propId("FOLDER_REWARD_ID");
+  var profileId = prop("FOLDER_PROFILE_ID");
+  var newsId = prop("FOLDER_NEWS_ID");
+  var missionsId = prop("FOLDER_MISSIONS_ID");
+  var rewardId = prop("FOLDER_REWARD_ID");
   var quotationId = quotationFolderId_();
   var quotationPdfId = quotationPdfFolderId_();
   var quotationImageId = quotationImageFolderId_();
@@ -176,8 +140,8 @@ function driveFolders() {
     quotation_pdf: quotationPdfId,
     quotation_images: quotationImageId,
     quotation_attachments: quotationId,
-    mission_evidence: propId("FOLDER_MISSION_EVIDENCE_ID", missionsId),
-    attachments: propId("FOLDER_ATTACHMENTS_ID", missionsId || newsId || rewardId || profileId)
+    mission_evidence: prop("FOLDER_MISSION_EVIDENCE_ID", missionsId),
+    attachments: prop("FOLDER_ATTACHMENTS_ID", missionsId || newsId || rewardId || profileId)
   };
 }
 
@@ -1565,7 +1529,7 @@ function buildQuotationReportSheet_(ss, q) {
   var companyAddress = prop("QUOTATION_COMPANY_ADDRESS", "");
   var companyPhone = prop("QUOTATION_COMPANY_PHONE", "");
   var companyTaxId = prop("QUOTATION_COMPANY_TAX_ID", "");
-  var logoFileId = propId("QUOTATION_LOGO_FILE_ID", "");
+  var logoFileId = prop("QUOTATION_LOGO_FILE_ID", "");
 
   sheet.getRange("C1:J2").merge();
   sheet.getRange("C1").setValue("ใบเสนอราคา / QUOTATION").setFontSize(22).setFontWeight("bold").setFontColor("#0f766e").setHorizontalAlignment("right");
@@ -1704,7 +1668,7 @@ function buildCustomerQuotationSheet_(ss, q) {
   var companyAddress = prop("QUOTATION_COMPANY_ADDRESS", "");
   var companyPhone = prop("QUOTATION_COMPANY_PHONE", "");
   var companyTaxId = prop("QUOTATION_COMPANY_TAX_ID", "");
-  var logoFileId = propId("QUOTATION_LOGO_FILE_ID", "");
+  var logoFileId = prop("QUOTATION_LOGO_FILE_ID", "");
 
   sheet.getRange("C1:H2").merge();
   sheet.getRange("C1").setValue("ใบเสนอราคา / QUOTATION").setFontSize(22).setFontWeight("bold").setFontColor("#1d4ed8").setHorizontalAlignment("right");
@@ -2846,172 +2810,4 @@ function formatBangkokTime_(isoString) {
   } catch (err) {
     return String(isoString || "");
   }
-}
-
-// =============================================================================
-// ชุดทดสอบระบบ "ลืมรหัสผ่าน" - รันจากหน้า Apps Script เท่านั้น
-//
-// วิธีใช้
-//   เลือกชื่อฟังก์ชันจากดรอปดาวน์ด้านบน แล้วกด Run
-//   แล้วดูผลที่แถบ "Execution log" ด้านล่าง
-//
-// ทำไมต้องมี
-//   ปุ่มลืมรหัสผ่านบนหน้าเว็บตอบ "ส่งคำขอเรียบร้อยแล้ว" เหมือนกันทุกกรณี
-//   โดยตั้งใจ เพื่อไม่ให้ใครใช้หน้านั้นไล่เดาว่ารหัสพนักงานไหนมีอยู่จริง
-//   ผลข้างเคียงคือเวลามีปัญหาจะไม่รู้ว่าพังตรงไหน ชุดนี้จึงบอกตรง ๆ
-//
-//   รันตามลำดับ 1 -> 2 -> 3 หยุดตรงที่แรกที่ขึ้นว่าล้มเหลว
-// =============================================================================
-
-// ---------------------------------------------------------------------------
-// TEST 1: ส่งเมลได้หรือเปล่า (ไม่ยุ่งกับฐานข้อมูลเลย)
-// ครั้งแรกที่รันจะเด้งหน้าขออนุญาต ให้กด Review permissions แล้ว Allow ให้ครบ
-// ---------------------------------------------------------------------------
-function TEST_1_MAIL_ONLY() {
-  var to = prop("PASSWORD_RESET_NOTIFY_EMAIL", "salary.sbinterlab@gmail.com");
-  Logger.log("ปลายทาง: " + to);
-  Logger.log("โควต้าเมลที่เหลือวันนี้: " + MailApp.getRemainingDailyQuota());
-
-  MailApp.sendEmail({
-    to: to,
-    subject: "[SB Connect] ทดสอบระบบส่งเมล",
-    body: [
-      "นี่คือเมลทดสอบจากระบบ SB Connect",
-      "ถ้าได้รับเมลฉบับนี้ แปลว่าการส่งเมลทำงานปกติ",
-      "",
-      "เวลาที่ส่ง: " + formatBangkokTime_(new Date().toISOString())
-    ].join("\n")
-  });
-
-  Logger.log("ส่งเมลเรียบร้อย ไปดูกล่องจดหมายของ " + to + " (เช็คโฟลเดอร์ Spam ด้วย)");
-  return "OK";
-}
-
-// ---------------------------------------------------------------------------
-// TEST 2: คุยกับ Supabase ได้หรือเปล่า
-// ใช้รหัสพนักงานปลอม จึงไม่สร้างรหัสจริง ไม่กินโควต้า 3 ครั้งต่อวันของใคร
-// ---------------------------------------------------------------------------
-function TEST_2_SUPABASE() {
-  var url = prop("SUPABASE_URL");
-  var key = prop("SUPABASE_SERVICE_ROLE_KEY");
-
-  Logger.log("SUPABASE_URL              : " + (url ? url : ">>> ไม่มีค่า หรือชื่อ property สะกดผิด <<<"));
-  Logger.log("SUPABASE_SERVICE_ROLE_KEY : " + (key ? "มีค่า ยาว " + key.length + " ตัว" : ">>> ไม่มีค่า หรือชื่อ property สะกดผิด <<<"));
-  if (!url || !key) {
-    Logger.log("หยุด: ต้องตั้ง Script Properties สองตัวนี้ให้ครบก่อน");
-    return "MISSING_PROPS";
-  }
-  if (key.length < 40) {
-    Logger.log("เตือน: คีย์สั้นผิดปกติ ตรวจว่าใช้ service_role key ไม่ใช่ anon key");
-  }
-
-  var response = quotationSupabaseRequest_("rpc/" + PASSWORD_RESET_RPC, "post", {
-    p_emp_id: "__TEST_NOT_A_REAL_EMP__",
-    p_user_agent: "apps-script-self-test",
-    p_source_ip: ""
-  });
-  var code = response.getResponseCode();
-  var text = response.getContentText();
-  Logger.log("HTTP " + code);
-  Logger.log("ตอบกลับ: " + text);
-
-  if (code < 200 || code >= 300) {
-    Logger.log(">>> ล้มเหลว: เรียก Supabase ไม่ผ่าน");
-    Logger.log("    401/403 = คีย์ผิด หรือใช้ anon key แทน service_role");
-    Logger.log("    404     = ยังไม่ได้รัน sql/20_PASSWORD_RESET_REQUEST.sql ในฐานนี้");
-    return "HTTP_" + code;
-  }
-  if (text.indexOf("UNKNOWN_EMP_ID") >= 0) {
-    Logger.log(">>> ผ่าน: เชื่อมต่อ Supabase ได้ถูกต้อง (ตอบว่าไม่รู้จักรหัสพนักงานปลอม ซึ่งถูกแล้ว)");
-    return "OK";
-  }
-  Logger.log(">>> เชื่อมต่อได้ แต่คำตอบไม่ใช่ที่คาดไว้ อ่านบรรทัด 'ตอบกลับ' ข้างบน");
-  return "UNEXPECTED";
-}
-
-// ---------------------------------------------------------------------------
-// TEST 3: ทดสอบทั้งกระบวนการด้วยรหัสพนักงานจริง
-// จะออกรหัสยืนยันจริงและส่งเมลจริง และกินโควต้า 3 ครั้งต่อวันของคนนั้นไป 1 ครั้ง
-//
-// >>> แก้ EMP_ID ข้างล่างเป็นรหัสพนักงานที่มีอยู่จริงก่อนกด Run <<<
-// ---------------------------------------------------------------------------
-function TEST_3_FULL_FLOW() {
-  var EMP_ID = "3672";   // <-- แก้ตรงนี้
-
-  Logger.log("ทดสอบเต็มรูปแบบกับรหัสพนักงาน: " + EMP_ID);
-
-  var response = quotationSupabaseRequest_("rpc/" + PASSWORD_RESET_RPC, "post", {
-    p_emp_id: EMP_ID,
-    p_user_agent: "apps-script-self-test",
-    p_source_ip: ""
-  });
-  var code = response.getResponseCode();
-  Logger.log("ขั้นที่ 1 เรียก Supabase -> HTTP " + code);
-  if (code < 200 || code >= 300) {
-    Logger.log("ตอบกลับ: " + response.getContentText());
-    Logger.log(">>> หยุดที่ขั้นที่ 1 ไปรัน TEST_2_SUPABASE เพื่อดูรายละเอียด");
-    return "STEP1_FAILED";
-  }
-
-  var payload = JSON.parse(response.getContentText() || "null");
-  if (!payload) {
-    Logger.log(">>> Supabase ตอบกลับมาว่าง");
-    return "EMPTY";
-  }
-
-  Logger.log("ขั้นที่ 2 ผลจากฐานข้อมูล");
-  Logger.log("   status     : " + payload.status);
-  Logger.log("   send_email : " + payload.send_email);
-  if (payload.reason) Logger.log("   reason     : " + payload.reason);
-
-  if (payload.send_email !== true) {
-    if (payload.reason === "UNKNOWN_EMP_ID") {
-      Logger.log(">>> ไม่พบรหัสพนักงานนี้ หรือบัญชีถูกปิดใช้งาน แก้ EMP_ID ข้างบนแล้วรันใหม่");
-    } else if (payload.reason === "USER_RATE_LIMIT") {
-      Logger.log(">>> คนนี้ขอครบ 3 ครั้งใน 24 ชั่วโมงแล้ว ลองรหัสพนักงานคนอื่น หรือรอพรุ่งนี้");
-    } else if (payload.reason === "SYSTEM_RATE_LIMIT") {
-      Logger.log(">>> ทั้งระบบขอเกิน 30 ครั้งในหนึ่งชั่วโมง รออีกสักพัก");
-    } else {
-      Logger.log(">>> ฐานข้อมูลไม่อนุญาตให้ส่งเมลรอบนี้");
-    }
-    return "NO_EMAIL:" + (payload.reason || "");
-  }
-
-  var emp = payload.employee || {};
-  var to = String(payload.notify_email || prop("PASSWORD_RESET_NOTIFY_EMAIL", "salary.sbinterlab@gmail.com")).trim();
-  Logger.log("ขั้นที่ 3 ได้รหัสยืนยันแล้ว จะส่งไปที่ " + to);
-  Logger.log("   พนักงาน : " + (emp.emp_id || "-") + " " + (emp.full_name || "-") + " / " + (emp.department || "-"));
-  Logger.log("   รหัสมี " + String(payload.code || "").length + " ตัว (ไม่พิมพ์ลง log เพื่อความปลอดภัย)");
-  Logger.log("   โควต้าเมลที่เหลือวันนี้: " + MailApp.getRemainingDailyQuota());
-
-  try {
-    MailApp.sendEmail({
-      to: to,
-      subject: "[SB Connect] ขอรหัสผ่านชั่วคราว (ทดสอบ) - " + (emp.emp_id || EMP_ID) + " " + (emp.full_name || ""),
-      body: [
-        "เมลนี้ถูกส่งจากชุดทดสอบ TEST_3_FULL_FLOW",
-        "",
-        "รหัสยืนยัน 6 หลัก : " + payload.code,
-        "ใช้ได้ถึง          : " + formatBangkokTime_(payload.expires_at),
-        "",
-        "รหัสพนักงาน : " + (emp.emp_id || "-"),
-        "ชื่อ-นามสกุล : " + (emp.full_name || "-"),
-        "แผนก        : " + (emp.department || "-"),
-        "ตำแหน่ง      : " + (emp.position || "-")
-      ].join("\n")
-    });
-  } catch (mailErr) {
-    Logger.log(">>> หยุดที่ขั้นที่ 3 ส่งเมลไม่สำเร็จ: " + mailErr);
-    Logger.log("    ถ้าเป็นเรื่องสิทธิ์ ให้รัน TEST_1_MAIL_ONLY แล้วกด Allow ให้ครบก่อน");
-    return "MAIL_FAILED";
-  }
-
-  try {
-    quotationSupabaseRequest_("rpc/" + PASSWORD_RESET_MARK_RPC, "post", { p_request_id: payload.request_id });
-  } catch (markErr) {
-    Logger.log("   (ประทับเวลาว่าส่งเมลแล้วไม่สำเร็จ ไม่กระทบการใช้งาน)");
-  }
-
-  Logger.log(">>> ผ่านทั้งหมด ไปดูกล่องจดหมายของ " + to + " (เช็ค Spam ด้วย)");
-  return "OK";
 }
