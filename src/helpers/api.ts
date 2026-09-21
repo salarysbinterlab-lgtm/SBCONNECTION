@@ -64,6 +64,19 @@ export const ALLOWED_RPC = [
   'admin_update_reward_redemption',
   'admin_add_special_points',
   'admin_reset_password',
+  // ล้างข้อมูลทดสอบ ฐานข้อมูลเช็คเองว่าเป็นบัญชีที่อยู่ในรายชื่ออนุญาตหรือเปล่า
+  'admin_system_reset',
+  // โมดูลใบคำร้อง IT (ย้ายมาจากระบบ XAMPP) สิทธิ์ทั้งหมดเช็คในฐานข้อมูล
+  'it_create_request',
+  'it_list_my_requests',
+  'it_get_request',
+  'it_list_manager_queue',
+  'it_manager_decide',
+  'it_list_it_queue',
+  'it_close_request',
+  'it_list_all_requests',
+  'it_dashboard_summary',
+  'it_admin_edit_request',
 ] as const;
 
 export type AllowedRpc = (typeof ALLOWED_RPC)[number];
@@ -315,15 +328,23 @@ export async function rpc<T>(fn: AllowedRpc | string, args: Record<string, unkno
     }
 
     if (!res.ok) {
-      const obj = data as { message?: string; error?: string; details?: string };
+      const obj = data as { message?: string; error?: string; details?: string; code?: string };
       // ไม่โยนข้อความดิบจากฐานข้อมูลออกหน้าจอ กัน information disclosure
+      // แต่โชว์ "รหัสข้อผิดพลาด" ได้ เพราะเป็นรหัสมาตรฐาน ไม่มีข้อมูลของใครอยู่ในนั้น
+      // และช่วยให้แอดมินบอกทีมดูแลได้ว่าติดตรงไหน แทนที่จะเดากันไปมา
+      //   PGRST202 = ยังไม่ได้สร้างฟังก์ชันนี้ในฐานข้อมูล (ลืมรัน SQL)
+      //   PGRST301 = ปัญหาเรื่องคีย์/สิทธิ์
+      //   42501    = ฐานข้อมูลไม่อนุญาตให้เรียกฟังก์ชันนี้
+      const code = String(obj?.code || res.status);
       if (import.meta.env.DEV) {
-        console.warn(`[rpc:${fn}]`, obj?.message || obj?.details || rawText);
+        console.warn(`[rpc:${fn}]`, code, obj?.message || obj?.details || rawText);
+      } else {
+        console.warn(`[rpc:${fn}] ${code}`);
       }
       if (res.status === 401 || res.status === 403) {
         throw new Error('SESSION_EXPIRED');
       }
-      throw new Error('ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง');
+      throw new Error(`ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง (รหัส ${code})`);
     }
 
     if (data && typeof data === 'object' && data.status === 'error') {

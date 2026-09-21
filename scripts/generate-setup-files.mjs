@@ -84,6 +84,9 @@ const BUNDLES = [
       '20_PASSWORD_RESET_REQUEST.sql',
       '21_ADMIN_ACCOUNTS_AND_AUDIT.sql',
       '22_NEWS_DAILY_OTP_AND_FAILPATH_FIXES.sql',
+      '25_ADMIN_SYSTEM_RESET.sql',
+      '27_IT_REQUEST_MODULE.sql',
+      '28_IT_REQUEST_SEED_COUNTER.sql',
     ],
   },
 ];
@@ -92,8 +95,9 @@ const BUNDLES = [
 const last = BUNDLES[BUNDLES.length - 1];
 if (last.out !== 'SETUP_3_SECURITY.sql'
     || last.files[0] !== '17_SECURITY_HARDENING_AND_FIXES.sql'
-    || last.files[last.files.length - 1] !== '22_NEWS_DAILY_OTP_AND_FAILPATH_FIXES.sql') {
-  throw new Error('SETUP_3_SECURITY.sql ต้องเป็นชุดสุดท้าย และต้องขึ้นต้นด้วย 17_ ปิดท้ายด้วย 22_');
+    || last.files[last.files.length - 1] !== '28_IT_REQUEST_SEED_COUNTER.sql'
+    || !last.files.includes('25_ADMIN_SYSTEM_RESET.sql')) {
+  throw new Error('SETUP_3_SECURITY.sql ต้องเป็นชุดสุดท้าย ขึ้นต้นด้วย 17_ มี 25_ และปิดท้ายด้วย 28_');
 }
 
 await import('node:fs/promises').then(({ mkdir }) => mkdir(outDir, { recursive: true }));

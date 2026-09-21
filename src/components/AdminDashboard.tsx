@@ -139,6 +139,19 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
   // Users Page inspection / Ledger
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
   const [selectedUserLogs, setSelectedUserLogs] = useState<any[]>([]);
+
+  // ล้างข้อมูลทดสอบ - โชว์เฉพาะบัญชีที่กำหนด และฐานข้อมูลเช็คซ้ำอีกชั้นเสมอ
+  // การซ่อนปุ่มไม่ใช่ระบบความปลอดภัย เป็นแค่การไม่เกะกะตาแอดมินคนอื่น
+  const RESET_ALLOWED_EMP_IDS = ['admin1'];
+  // อ่านเผื่อทั้ง emp_id และ empId เพราะ object ผู้ใช้มาได้จาก 2 ทาง
+  // (ค่าที่ App.tsx ส่งเข้ามาตรง ๆ กับค่าที่อ่านกลับจาก localStorage)
+  const currentEmpId = String(user?.emp_id || user?.empId || '').trim().toLowerCase();
+  const canResetSystem = RESET_ALLOWED_EMP_IDS.includes(currentEmpId);
+  const [resetScopes, setResetScopes] = useState<Record<string, boolean>>({
+    points: false, news: false, missions: false, rewards: false,
+  });
+  const [resetConfirmText, setResetConfirmText] = useState('');
+  const [resetBusy, setResetBusy] = useState(false);
   
   // Pagination (10 per page as requested)
   const [currentPage, setCurrentPage] = useState(1);
@@ -212,6 +225,26 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
     setCurrentPage(1);
     fetchData();
   }, [activeModule]);
+
+  // เดิมข้อมูลฝั่งแอดมินจะดึงใหม่เฉพาะตอนสลับเมนูหรือหลังกดบันทึกเท่านั้น
+  // ถ้านั่งค้างอยู่หน้า "ภารกิจที่ส่งเข้ามา" หรือ "รายการแลกของ" แล้วมีคนส่งงานเข้ามาใหม่
+  // จะไม่เห็นจนกว่าจะสลับเมนู จึงดึงใหม่ให้เมื่อกลับเข้าหน้าต่างนี้
+  useEffect(() => {
+    if (!token) return;
+    let lastRefreshAt = Date.now();
+    const maybeRefresh = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      if (Date.now() - lastRefreshAt < 20000) return;
+      lastRefreshAt = Date.now();
+      fetchData();
+    };
+    document.addEventListener('visibilitychange', maybeRefresh);
+    window.addEventListener('focus', maybeRefresh);
+    return () => {
+      document.removeEventListener('visibilitychange', maybeRefresh);
+      window.removeEventListener('focus', maybeRefresh);
+    };
+  }, [activeModule, token]);
 
   const fetchData = async () => {
     if (!token) return;
@@ -342,6 +375,69 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
       showError(err);
     } finally {
       setResetLoading(false);
+    }
+  };
+
+  // ล้างข้อมูลทดสอบ - ลบแล้วกู้คืนไม่ได้ จึงถามยืนยันสองชั้นก่อนยิงจริง
+  const handleSystemReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const scopes = Object.keys(resetScopes).filter((key) => resetScopes[key]);
+    if (!scopes.length) {
+      showError(lang === 'th' ? 'เลือกอย่างน้อย 1 รายการก่อน' : 'Select at least one item');
+      return;
+    }
+    if (resetConfirmText.trim().toUpperCase() !== 'RESET') {
+      showError(lang === 'th' ? 'พิมพ์คำว่า RESET ในช่องยืนยันก่อน' : 'Type RESET to confirm');
+      return;
+    }
+
+    const labelOf: Record<string, string> = {
+      points: lang === 'th' ? 'แต้มและกิจกรรมทั้งหมด' : 'All points and activity',
+      news: lang === 'th' ? 'ข่าวทั้งหมด' : 'All news',
+      missions: lang === 'th' ? 'ภารกิจทั้งหมด' : 'All missions',
+      rewards: lang === 'th' ? 'ของรางวัลทั้งหมด' : 'All rewards',
+    };
+
+    const swal = (window as any).Swal;
+    const detail = scopes.map((key) => '• ' + labelOf[key]).join('\n');
+    if (swal) {
+      const confirmed = await swal.fire({
+        icon: 'warning',
+        title: lang === 'th' ? 'ล้างข้อมูลถาวร' : 'Permanent delete',
+        text: (lang === 'th' ? 'จะลบสิ่งเหล่านี้ทิ้งถาวร กู้คืนไม่ได้\n\n' : 'This permanently deletes:\n\n') + detail,
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        confirmButtonText: lang === 'th' ? 'ยืนยันล้างข้อมูล' : 'Delete now',
+        cancelButtonText: lang === 'th' ? 'ยกเลิก' : 'Cancel',
+      });
+      if (!confirmed.isConfirmed) return;
+    } else if (!confirm(detail)) {
+      return;
+    }
+
+    setResetBusy(true);
+    try {
+      const result = await rpc<any>('admin_system_reset', {
+        p_token: token,
+        p_scopes: scopes,
+        p_confirm: 'RESET',
+      });
+      if (result?.status === 'error') throw new Error(result.message || 'ล้างข้อมูลไม่สำเร็จ');
+
+      const deleted = result?.deleted || {};
+      const summary = Object.keys(deleted)
+        .map((group) => Object.keys(deleted[group]).map((t) => `${t}: ${deleted[group][t]}`).join(', '))
+        .filter(Boolean)
+        .join('\n');
+      showNotice((result?.message || 'ล้างข้อมูลเรียบร้อยแล้ว') + (summary ? '\n\n' + summary : ''));
+
+      setResetScopes({ points: false, news: false, missions: false, rewards: false });
+      setResetConfirmText('');
+      fetchData();
+    } catch (err) {
+      showError(err);
+    } finally {
+      setResetBusy(false);
     }
   };
 
@@ -1073,6 +1169,70 @@ export default function AdminDashboard({ user: initialUser, onLogout }: AdminDas
                   </div>
 
                 </section>
+
+                {/* ── ล้างข้อมูลทดสอบ - เฉพาะบัญชีที่กำหนดเท่านั้น ─────────────── */}
+                {canResetSystem && (
+                  <section className="rounded-3xl p-5 shadow-sm border"
+                    style={{ background: darkMode ? 'rgba(127,29,29,0.15)' : '#fef2f2', borderColor: '#fecaca' }}>
+                    <h4 className="text-sm font-black flex items-center gap-1.5 mb-1 text-red-600">
+                      <Trash2 size={16} /> {lang === 'th' ? 'ล้างข้อมูลทดสอบ (Reset ระบบ)' : 'Reset system data'}
+                    </h4>
+                    <p className="text-[11px] font-bold leading-relaxed text-red-500/80 mb-4">
+                      {lang === 'th'
+                        ? 'ใช้ตอนจบช่วงทดลอง เพื่อล้างข้อมูลที่เกิดจากการทดสอบก่อนเปิดใช้งานจริง ลบแล้วกู้คืนไม่ได้'
+                        : 'Use at the end of the trial period. Deleted data cannot be recovered.'}
+                      <br />
+                      {lang === 'th'
+                        ? 'บัญชีพนักงาน รหัสผ่าน แผนก ตำแหน่ง และประวัติการกระทำของแอดมิน จะไม่ถูกลบ'
+                        : 'Employee accounts, passwords, departments, positions and admin audit logs are never deleted.'}
+                    </p>
+
+                    <form onSubmit={handleSystemReset} className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {[
+                          { key: 'points', th: 'ล้างแต้มทั้งหมด', en: 'All points',
+                            noteTh: 'รวมเช็คอิน อ่านข่าว ส่งภารกิจ แลกของรางวัล และคืนสต็อกให้ของรางวัล' },
+                          { key: 'news', th: 'ล้างข่าวทั้งหมด', en: 'All news', noteTh: 'ลบข่าวและประวัติการอ่าน' },
+                          { key: 'missions', th: 'ล้างภารกิจทั้งหมด', en: 'All missions', noteTh: 'ลบภารกิจและประวัติการส่ง' },
+                          { key: 'rewards', th: 'ล้างของรางวัลทั้งหมด', en: 'All rewards', noteTh: 'ลบของรางวัลและประวัติการแลก' },
+                        ].map((item) => (
+                          <label key={item.key}
+                            className="flex items-start gap-2 p-3 rounded-2xl border cursor-pointer bg-white/70 dark:bg-slate-900/40"
+                            style={{ borderColor: resetScopes[item.key] ? '#dc2626' : thm.border + '60' }}>
+                            <input type="checkbox" className="mt-0.5"
+                              checked={!!resetScopes[item.key]}
+                              onChange={(e) => setResetScopes({ ...resetScopes, [item.key]: e.target.checked })} />
+                            <span className="min-w-0">
+                              <span className="block text-xs font-black" style={{ color: textColor }}>
+                                {lang === 'th' ? item.th : item.en}
+                              </span>
+                              <span className="block text-[10px] font-bold opacity-50 leading-relaxed">{item.noteTh}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black opacity-60 block mb-1">
+                          {lang === 'th' ? 'พิมพ์คำว่า RESET เพื่อยืนยัน' : 'Type RESET to confirm'}
+                        </label>
+                        <input value={resetConfirmText}
+                          onChange={(e) => setResetConfirmText(e.target.value)}
+                          placeholder="RESET"
+                          className="w-full bg-white dark:bg-slate-900 border rounded-2xl h-11 px-4 text-xs font-black tracking-widest outline-none"
+                          style={{ color: textColor, borderColor: '#fca5a5' }} />
+                      </div>
+
+                      <button type="submit"
+                        disabled={resetBusy || resetConfirmText.trim().toUpperCase() !== 'RESET'}
+                        className="w-full h-11 rounded-2xl bg-red-600 hover:bg-red-700 text-white text-xs font-black transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
+                        {resetBusy
+                          ? (lang === 'th' ? 'กำลังล้างข้อมูล...' : 'Deleting...')
+                          : (lang === 'th' ? 'ล้างข้อมูลที่เลือก' : 'Delete selected')}
+                      </button>
+                    </form>
+                  </section>
+                )}
               </div>
             )}
 

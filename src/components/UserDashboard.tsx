@@ -434,7 +434,8 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
   }, []);
 
   // ── Data fetching ─────────────────────────────────────────────────────
-  useEffect(() => {
+  // ดึงข้อมูลของแท็บที่เปิดอยู่ แยกเป็นฟังก์ชันเพื่อเรียกซ้ำได้ตอนกลับเข้าแอป
+  const refreshActiveTab = () => {
     if (!token) return;
     if (activeTab === 'home')               { fetchDashboard(); fetchLogs(); fetchCalendarEvents(); fetchMissions(); }
     else if (activeTab === 'news')          fetchNews();
@@ -445,7 +446,30 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
     else if (activeTab === 'notifications') fetchNotifications();
     else if (activeTab === 'logs')          fetchLogs();
     else if (activeTab === 'settings')      fetchCalendarEvents();
-  }, [activeTab]);
+  };
+
+  useEffect(() => { refreshActiveTab(); }, [activeTab]);
+
+  // เดิมข้อมูลจะดึงใหม่เฉพาะตอนสลับแท็บเท่านั้น
+  // ถ้าผู้ใช้เปิดแอปค้างไว้แล้วแอดมินเพิ่มข่าว/ภารกิจ/ของรางวัลระหว่างนั้น หน้าจอจะค้างของเก่า
+  // จึงดึงใหม่ให้อัตโนมัติเมื่อกลับเข้าแอป (สลับแอปบนมือถือ หรือสลับแท็บเบราว์เซอร์กลับมา)
+  // เว้นระยะอย่างน้อย 20 วินาที กันยิงรัวตอนสลับหน้าต่างถี่ ๆ
+  useEffect(() => {
+    if (!token) return;
+    let lastRefreshAt = Date.now();
+    const maybeRefresh = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      if (Date.now() - lastRefreshAt < 20000) return;
+      lastRefreshAt = Date.now();
+      refreshActiveTab();
+    };
+    document.addEventListener('visibilitychange', maybeRefresh);
+    window.addEventListener('focus', maybeRefresh);
+    return () => {
+      document.removeEventListener('visibilitychange', maybeRefresh);
+      window.removeEventListener('focus', maybeRefresh);
+    };
+  }, [activeTab, token]);
 
   const fetchDashboard = async () => {
     setLoading(true);

@@ -22,6 +22,21 @@ function filesUnder(directory: string, extension: RegExp): string[] {
   });
 }
 
+function basenameOf(path: string): string {
+  return path.split(/[\\/]/).pop() || '';
+}
+
+// ไฟล์ SQL ที่ถูกนำไปรันจริง ไม่รวมชุดรวม setup/ และไฟล์ที่เลิกใช้แล้ว
+function activeSqlFiles(): string[] {
+  return filesUnder(join(root, 'sql'), /\.sql$/).filter(
+    (path) =>
+      !path.includes('all_in_one') &&
+      !path.includes(`${join('sql', 'setup')}`) &&
+      !path.includes('_unused') &&
+      !path.includes('_dev_only'),
+  );
+}
+
 function productionSource(): string {
   return filesUnder(join(root, 'src'), /\.(ts|tsx)$/)
     .filter((path) => !path.includes(`${join('src', 'dev')}`) && !path.endsWith('.test.ts') && !path.endsWith('.test.tsx'))
@@ -70,8 +85,14 @@ describe('security contract', () => {
     expect(missing).toEqual([]);
   });
 
-  itWithSql('ทุกชื่อใน allowlist ต้องถูก grant ให้ anon ใน sql/17 และไม่มีชื่อเกิน', () => {
-    const lockdown = readFileSync(join(root, 'sql', '17_SECURITY_HARDENING_AND_FIXES.sql'), 'utf8');
+  itWithSql('ทุกชื่อใน allowlist ต้องถูก grant ให้ anon และไม่มีชื่อเกิน', () => {
+    // 17_ เป็นไฟล์ปิดสิทธิ์หลัก แต่ฟังก์ชันที่ถูกสร้างในไฟล์หลังจากนั้น (25_, 27_ ...)
+    // ต้อง grant ในไฟล์ของตัวเอง เพราะตอนรัน 17_ ฟังก์ชันเหล่านั้นยังไม่มีอยู่จริง
+    // จึงรวม grant จากไฟล์ 17_ ถึง 29_ แล้วเทียบกับ allowlist ทีเดียว
+    const lockdown = activeSqlFiles()
+      .filter((path) => /(?:1[7-9]|2[0-9])_/.test(basenameOf(path)))
+      .map((path) => readFileSync(path, 'utf8'))
+      .join('\n');
     const granted = new Set<string>();
     for (const m of lockdown.matchAll(/grant execute on function public\.([a-z0-9_]+)\([^)]*\)\s+to\s+anon/gi)) {
       granted.add(m[1].toLowerCase());
@@ -87,14 +108,14 @@ describe('security contract', () => {
 
   itWithSql('ไม่มีไฟล์ SQL ไหน grant ฟังก์ชันนอก allowlist ให้ anon', () => {
     // ไฟล์ 19_/20_ ใช้ create or replace แล้ว grant กลับ ต้องไม่แอบเปิดชื่อใหม่ให้ anon
-    const sqlFiles = filesUnder(join(root, 'sql'), /\.sql$/).filter((p) => !p.includes('all_in_one'));
+    const sqlFiles = activeSqlFiles();
     const allowed = new Set<string>(ALLOWED_RPC as readonly string[]);
     const offenders: string[] = [];
 
     for (const path of sqlFiles) {
       const body = readFileSync(path, 'utf8');
       // ข้ามไฟล์รุ่นเก่าที่ถูก 17_ ปิดสิทธิ์ทับไปแล้วทั้งหมด
-      if (!/(?:1[7-9]|2[0-9])_/.test(path)) continue;
+      if (!/(?:1[7-9]|2[0-9])_/.test(basenameOf(path))) continue;
       for (const m of body.matchAll(/grant execute on function public\.([a-z0-9_]+)\([^)]*\)\s+to\s+[^;]*\banon\b/gi)) {
         const name = m[1].toLowerCase();
         if (!allowed.has(name)) offenders.push(`${path.split(/[\\/]/).pop()}: ${name}`);

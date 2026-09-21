@@ -216,6 +216,14 @@ function doPost(e) {
       validateAppUploadAuthorization_(body._validatedSession, resolvedBucket, body.meta || {});
     }
 
+    // โมดูลใบคำร้อง IT: เขียนทะเบียน Google Sheet ทันทีที่ผู้ใช้กดปุ่ม
+    // ไม่ต้องรอ trigger รอบถัดไป สิทธิ์ทั้งหมดตรวจในฐานข้อมูลแล้ว
+    // ที่นี่ต้องการแค่ session จริง ซึ่งผ่านการตรวจไปแล้วด้านบน
+    // ตัวฟังก์ชันอยู่ในไฟล์ SBConnect_IT_Request_Register.gs
+    if (requestType === "it_request_sync") {
+      return jsonOutput(itReqFlushRegister_(Number(body.limit) || 25));
+    }
+
     if (quotationAction) {
       return handleQuotationAction_(requestType, body);
     }
