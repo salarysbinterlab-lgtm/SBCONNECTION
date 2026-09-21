@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sb-connect-runtime-v3';
+const CACHE_NAME = 'sb-connect-runtime-v4';
 const BASE_URL = new URL('./', self.location.href);
 // precache เฉพาะของที่จำเป็นต่อการเปิดแอปจริง ๆ
 // วิดีโอ intro (257 KB) และ GIF (571 KB) ถูกเอาออก เพราะทำให้ทุกเครื่องต้องโหลดตั้งแต่ติดตั้ง
@@ -7,6 +7,7 @@ const APP_SHELL = [
   '',
   'offline.html',
   'manifest.webmanifest',
+  'icons/favicon-64.png',
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/maskable-512.png'
