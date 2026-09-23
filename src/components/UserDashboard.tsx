@@ -9,6 +9,9 @@ import {
 import { rpc, logout, getCurrentUser, uploadDriveFile } from '../helpers/api';
 import AppLoader from './AppLoader';
 import QuotationWorkspace from './QuotationWorkspace';
+import SocialMenu from './SocialMenu';
+import { COMMUNITY_GRADIENT } from '../constants/socialLinks';
+import { tintHandlers, TINT_CLASS } from '../helpers/hoverTint';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -45,7 +48,10 @@ const TRANS: Record<Lang, Record<string, string>> = {
     rank: 'อันดับ', history: 'ประวัติ', settings: 'ตั้งค่า', notifications: 'แจ้งเตือน',
     tools: 'เครื่องมือ', services: 'Services', quotation: 'เปิดใบ Quotation', it_request: 'ใบคำร้องขอ IT',
     rules: 'กฎระเบียบ', five_s: '5ส', iso_gmp: 'ISO/GMP', about_company: 'เกี่ยวกับบริษัท',
-    ranking_full: 'Ranking Full', filter_department: 'แผนก', filter_role: 'บทบาท',
+    ranking_full: 'ดูทั้งหมด', filter_department: 'แผนก', filter_role: 'บทบาท',
+    rank_all_title: 'อันดับทั้งหมด', rank_search: 'ค้นหาชื่อ รหัส หรือแผนก',
+    rank_all_dept: 'ทุกแผนก', rank_jump_me: 'ไปที่อันดับฉัน',
+    rank_people: 'คน', rank_none: 'ไม่พบคนที่ค้นหา', rank_hide: 'ย่อรายการ',
     checkin: 'เช็คอินประจำวัน', checkin_desc: 'รับคะแนนสะสมพิเศษและบันทึกกิจกรรมประจำวัน',
     checkin_done: 'เช็คอินวันนี้แล้ว ✓', checkin_btn: 'เช็คอินวันนี้', checkin_loading: 'กำลังบันทึก...',
     pts: 'แต้ม', read_btn: 'อ่านข่าว', read_done: 'อ่านแล้ว ✓',
@@ -61,6 +67,8 @@ const TRANS: Record<Lang, Record<string, string>> = {
     welcome_skip: 'ไม่ต้องแสดงอีกวันนี้', welcome_start: 'เริ่มใช้งาน',
     mark_read: 'อ่านทั้งหมด', no_notif: 'ไม่มีการแจ้งเตือน',
     cal_title: 'ปฏิทินเช็คอิน', cal_ok: 'เช็คอิน', cal_miss: 'ไม่ได้เช็คอิน', cal_event: 'กิจกรรม/หยุด',
+    cal_announce: 'ประกาศจากปฏิทิน', cal_note: 'บันทึกจากผู้ดูแล', cal_no_note: 'วันนี้ไม่มีข้อความเพิ่มเติม',
+    cal_close: 'ปิด', cal_read_all: 'ดูปฏิทินทั้งหมด', announce_title: 'ประกาศ',
     remaining: 'แต้มคงเหลือ', news_read_ct: 'ข่าวที่อ่าน', missions_ct: 'ภารกิจสำเร็จ', rewards_ct: 'การแลก',
     flip_hint: 'แตะเพื่อพลิกบัตร', flip_back: 'แตะเพื่อพลิกกลับ',
     work_info: 'ข้อมูลการเข้าทำงาน', total_checkin: 'เช็คอินสะสม', last_checkin_lbl: 'เช็คอินล่าสุด',
@@ -79,7 +87,10 @@ const TRANS: Record<Lang, Record<string, string>> = {
     rank: 'Rank', history: 'History', settings: 'Settings', notifications: 'Alerts',
     tools: 'Tools', services: 'Services', quotation: 'Quotation Request', it_request: 'IT Request',
     rules: 'Rules', five_s: '5S', iso_gmp: 'ISO/GMP', about_company: 'Company',
-    ranking_full: 'Ranking Full', filter_department: 'Department', filter_role: 'Role',
+    ranking_full: 'View all', filter_department: 'Department', filter_role: 'Role',
+    rank_all_title: 'Full ranking', rank_search: 'Search name, ID or department',
+    rank_all_dept: 'All departments', rank_jump_me: 'Jump to my rank',
+    rank_people: 'people', rank_none: 'No one matches that search', rank_hide: 'Collapse',
     checkin: 'Daily Check-In', checkin_desc: 'Earn bonus points by checking in every day',
     checkin_done: 'Checked In ✓', checkin_btn: 'Check In Now', checkin_loading: 'Saving...',
     pts: 'Pts', read_btn: 'Read', read_done: 'Read ✓',
@@ -95,6 +106,8 @@ const TRANS: Record<Lang, Record<string, string>> = {
     welcome_skip: "Don't show again today", welcome_start: 'Get Started',
     mark_read: 'Mark all read', no_notif: 'No notifications',
     cal_title: 'Check-In Calendar', cal_ok: 'Checked In', cal_miss: 'Missed', cal_event: 'Holiday/Event',
+    cal_announce: 'Calendar announcements', cal_note: 'Note from admin', cal_no_note: 'No extra note for this day',
+    cal_close: 'Close', cal_read_all: 'Open calendar', announce_title: 'Announcement',
     remaining: 'Points', news_read_ct: 'News Read', missions_ct: 'Missions', rewards_ct: 'Redeemed',
     flip_hint: 'Tap to flip', flip_back: 'Tap to flip back',
     work_info: 'Attendance Info', total_checkin: 'Total Check-Ins', last_checkin_lbl: 'Last Check-In',
@@ -269,8 +282,77 @@ function normalizeProfile(record: any = {}) {
     full_name: record.full_name || record.name || record.display_name || `${record.name_th || ''} ${record.surname_th || ''}`.trim(),
     department: record.department || record.dept || record.dept_th || record.department_name || '',
     position: record.position || record.pos_th || record.position_name || '',
+    avatar_url: record.avatar_url || record.avatar || record.avatarUrl || record.display_url || '',
     role: record.role || record.app_role || 'user',
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  บรรทัดตำแหน่งบนบัตรพนักงาน
+//
+//  เดิมโค้ดตัดสินจาก role อย่างเดียว ทุกคนที่ไม่ใช่ admin จึงขึ้นว่า
+//  "เจ้าหน้าที่ / Staff" เหมือนกันหมด ซึ่งไม่ตรงกับฐานข้อมูล
+//
+//  กติกาจริง: คำว่าเจ้าหน้าที่ใช้กับผู้ดูแลระบบและรหัสที่ระบุไว้เท่านั้น
+//  ที่เหลือต้องขึ้นตำแหน่งและแผนกของตัวเองตามที่บันทึกไว้
+// ─────────────────────────────────────────────────────────────────────────────
+const STAFF_EMP_IDS = new Set(['3672']);
+
+function cardTitleLines(profile: any, lang: 'th' | 'en') {
+  const role = String(profile?.role || '').toLowerCase();
+  const empId = String(profile?.emp_id || '').trim();
+  const position = String(profile?.position || '').trim();
+  const department = String(profile?.department || '').trim();
+
+  if (role === 'admin' || role === 'admin_it' || role === 'dev') {
+    return { main: 'ผู้จัดการ / Admin', sub: department };
+  }
+  if (STAFF_EMP_IDS.has(empId)) {
+    return { main: 'เจ้าหน้าที่ / Staff', sub: department };
+  }
+  return {
+    main: position || (lang === 'th' ? 'พนักงาน' : 'Employee'),
+    sub: department,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  รูปจาก Google Drive
+//
+//  ปัญหาที่เจอ: อัปโหลดแล้วไฟล์เข้า Drive จริง แต่พอ logout แล้ว login ใหม่
+//  รูปไม่ขึ้น ต้นเหตุมีสองชั้น
+//    1) ลิงก์ lh3.googleusercontent.com/d/<id> โหลดช้าและโดนจำกัดอัตราบ่อย
+//       จนบางครั้งไม่ขึ้นเลย
+//    2) รูปที่เพิ่งอัปถูกเก็บไว้ในหน่วยความจำของหน้าเท่านั้น พอออกจากระบบก็หาย
+//
+//  ตัวนี้แปลงลิงก์ทุกแบบให้เป็น drive.google.com/thumbnail ซึ่งเสถียรกว่ามาก
+//  และยังมี lh3 เป็นตัวสำรองใน onError อีกชั้น
+// ─────────────────────────────────────────────────────────────────────────────
+function driveFileIdOf(url?: string) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  const m =
+    raw.match(/\/d\/([A-Za-z0-9_-]{10,})/) ||
+    raw.match(/[?&]id=([A-Za-z0-9_-]{10,})/) ||
+    raw.match(/googleusercontent\.com\/d\/([A-Za-z0-9_-]{10,})/);
+  if (m) return m[1];
+  if (/^[A-Za-z0-9_-]{20,}$/.test(raw)) return raw;
+  return '';
+}
+
+function driveImageUrl(url?: string, size = 512) {
+  const id = driveFileIdOf(url);
+  if (!id) return String(url || '');
+  return `https://drive.google.com/thumbnail?id=${id}&sz=w${size}`;
+}
+
+function driveImageFallback(url?: string) {
+  const id = driveFileIdOf(url);
+  return id ? `https://lh3.googleusercontent.com/d/${id}` : '';
+}
+
+function avatarCacheKey(empId?: string) {
+  return 'sb_avatar_' + (empId || '');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -301,6 +383,9 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
   const [myRedemptions, setMyRedemptions]   = useState<any[]>([]);
   const [missionEvidenceFiles, setMissionEvidenceFiles] = useState<Record<string, File>>({});
   const [rankingList, setRankingList]       = useState<any[]>([]);
+  const [showAllRanking, setShowAllRanking] = useState(false);
+  const [rankingQuery, setRankingQuery]     = useState('');
+  const [rankingDept, setRankingDept]       = useState('all');
   const [notifications, setNotifications]   = useState<any[]>([]);
   const [logsList, setLogsList]             = useState<any[]>([]);
   const [rulesList, setRulesList]           = useState<any[]>([]);
@@ -312,7 +397,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
   const [cardTheme, setCardTheme] = useState(() => readCardTheme());
   const [darkMode, setDarkMode]     = useState(() => localStorage.getItem('sb_dark') === 'true');
   const [notifEnabled, setNotifEnabled] = useState(() => localStorage.getItem('sb_notif') !== 'false');
-  const [avatarUrl, setAvatarUrl]   = useState(() => localStorage.getItem('sb_avatar_' + (initialUser?.emp_id || '')) || '');
+  const [avatarUrl, setAvatarUrl]   = useState(() => localStorage.getItem(avatarCacheKey(initialUser?.emp_id || getCurrentUser()?.emp_id || '')) || '');
 
   const [showWelcome, setShowWelcome]         = useState(false);
   const [welcomeSkip, setWelcomeSkip]         = useState(false);
@@ -325,6 +410,10 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
   const [carouselIdx, setCarouselIdx]         = useState(0);
   const [calMonth, setCalMonth]               = useState(() => new Date());
   const [calendarEvents, setCalendarEvents]   = useState<any[]>([]);
+  // วันที่ถูกกดในปฏิทิน ใช้เปิดหน้าต่างอ่านโน้ตที่แอดมินใส่ไว้
+  const [calDayOpen, setCalDayOpen]           = useState<string | null>(null);
+  // ประกาศที่เด้งขึ้นมาหน้าแรก กดปิดแล้วจะไม่เด้งซ้ำในวันเดียวกัน
+  const [announcePopup, setAnnouncePopup]     = useState<any | null>(null);
   const [welcomeConfig, setWelcomeConfig] = useState<WelcomeConfig>({
     title: 'SB CONNECT',
     message: '',
@@ -334,15 +423,19 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
   const [cardPreviewOpen, setCardPreviewOpen] = useState(false);
   const [toolsModalOpen, setToolsModalOpen]   = useState(false);
   const [quotationOpen, setQuotationOpen]     = useState(false);
+  const [communityOpen, setCommunityOpen]     = useState(false);
   const [rulesCategory, setRulesCategory]     = useState<RuleCategory>('policy');
 
   const fileInputRef  = useRef<HTMLInputElement>(null);
   const notifPanelRef = useRef<HTMLDivElement>(null);
+  const communityBtnRef = useRef<HTMLButtonElement>(null);
   const promptedRenewRef = useRef(false);
   const token = localStorage.getItem('sb_session_token') || '';
   const t = (key: string) => TRANS[lang][key] || key;
   const thm = THEMES[theme];
   const profile = normalizeProfile(user);
+  // ตำแหน่ง/แผนกที่จะขึ้นบนบัตร คิดที่เดียวแล้วใช้ทั้งบัตรใหญ่ บัตรเล็ก และไฟล์ที่ดาวน์โหลด
+  const cardTitle = cardTitleLines(profile, lang);
   const cardExpiryDate = localDateKey(addDays(parseLocalDate(cardIssueDate), 365));
   const cardIssueDisplay = formatCardDate(cardIssueDate);
   const cardExpiryDisplay = formatCardDate(cardExpiryDate);
@@ -366,6 +459,44 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
     setTheme(readSelectedTheme(profile.emp_id));
     setCustomTheme(readCustomTheme(profile.emp_id));
   }, [profile.emp_id]);
+
+  // ── รูปโปรไฟล์: ดึงจากฐานข้อมูลทุกครั้งที่เข้าระบบ แล้วแคชไว้ในเครื่อง ─────
+  //
+  // เดิมรูปที่เพิ่งอัปโหลดอยู่ในหน่วยความจำของหน้าเท่านั้น พอ logout แล้ว login
+  // กลับมา หน้าถูกสร้างใหม่ ค่าจึงหายไป และถ้า get_home_dashboard ไม่ได้ส่ง
+  // avatar_url กลับมาด้วย ก็จะตกไปใช้รูปเริ่มต้นทันที
+  //
+  // ตรงนี้ถาม get_my_profile ตรง ๆ หนึ่งครั้งตอนเข้าหน้า แล้วเก็บผลไว้
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const p = await rpc<any>('get_my_profile', { p_token: token });
+        const record = normalizeProfile(p?.user || p || {});
+        if (cancelled || !record.emp_id) return;
+        if (record.avatar_url) {
+          setAvatarUrl(record.avatar_url);
+          try { localStorage.setItem(avatarCacheKey(record.emp_id), record.avatar_url); } catch { /* โหมดส่วนตัว */ }
+        }
+        setUser((prev: any) => {
+          const merged = normalizeProfile({ ...prev, ...record });
+          try { localStorage.setItem('sb_current_user', JSON.stringify(merged)); } catch { /* โหมดส่วนตัว */ }
+          return merged;
+        });
+      } catch { /* ถ้าถามไม่ได้ ก็ยังมีค่าที่แคชไว้ใช้ต่อ */ }
+    })();
+    return () => { cancelled = true; };
+  }, [token]);
+
+  // เซิร์ฟเวอร์ส่งรูปมาเมื่อไหร่ แคชทับของเดิมทันที
+  useEffect(() => {
+    const fromServer = user?.avatar_url || user?.avatar || '';
+    if (!fromServer || !profile.emp_id) return;
+    if (fromServer === avatarUrl) return;
+    setAvatarUrl(fromServer);
+    try { localStorage.setItem(avatarCacheKey(profile.emp_id), fromServer); } catch { /* โหมดส่วนตัว */ }
+  }, [user?.avatar_url, user?.avatar, profile.emp_id]);
 
   useEffect(() => {
     if (!profile.emp_id) return;
@@ -434,8 +565,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
   }, []);
 
   // ── Data fetching ─────────────────────────────────────────────────────
-  // ดึงข้อมูลของแท็บที่เปิดอยู่ แยกเป็นฟังก์ชันเพื่อเรียกซ้ำได้ตอนกลับเข้าแอป
-  const refreshActiveTab = () => {
+  useEffect(() => {
     if (!token) return;
     if (activeTab === 'home')               { fetchDashboard(); fetchLogs(); fetchCalendarEvents(); fetchMissions(); }
     else if (activeTab === 'news')          fetchNews();
@@ -446,30 +576,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
     else if (activeTab === 'notifications') fetchNotifications();
     else if (activeTab === 'logs')          fetchLogs();
     else if (activeTab === 'settings')      fetchCalendarEvents();
-  };
-
-  useEffect(() => { refreshActiveTab(); }, [activeTab]);
-
-  // เดิมข้อมูลจะดึงใหม่เฉพาะตอนสลับแท็บเท่านั้น
-  // ถ้าผู้ใช้เปิดแอปค้างไว้แล้วแอดมินเพิ่มข่าว/ภารกิจ/ของรางวัลระหว่างนั้น หน้าจอจะค้างของเก่า
-  // จึงดึงใหม่ให้อัตโนมัติเมื่อกลับเข้าแอป (สลับแอปบนมือถือ หรือสลับแท็บเบราว์เซอร์กลับมา)
-  // เว้นระยะอย่างน้อย 20 วินาที กันยิงรัวตอนสลับหน้าต่างถี่ ๆ
-  useEffect(() => {
-    if (!token) return;
-    let lastRefreshAt = Date.now();
-    const maybeRefresh = () => {
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-      if (Date.now() - lastRefreshAt < 20000) return;
-      lastRefreshAt = Date.now();
-      refreshActiveTab();
-    };
-    document.addEventListener('visibilitychange', maybeRefresh);
-    window.addEventListener('focus', maybeRefresh);
-    return () => {
-      document.removeEventListener('visibilitychange', maybeRefresh);
-      window.removeEventListener('focus', maybeRefresh);
-    };
-  }, [activeTab, token]);
+  }, [activeTab]);
 
   const fetchDashboard = async () => {
     setLoading(true);
@@ -695,12 +802,14 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
         p_file_name: uploaded.fileName,
         p_mime_type: uploaded.mimeType,
       });
-      const nextAvatar = saved?.avatarUrl || uploaded.directUrl;
+      const nextAvatar = saved?.avatarUrl || saved?.avatar_url || saved?.display_url || uploaded.directUrl;
       setAvatarUrl(nextAvatar);
       const nextUser = { ...user, avatar_url: nextAvatar, avatar: nextAvatar };
       setUser(nextUser);
       localStorage.setItem('sb_current_user', JSON.stringify(nextUser));
-      localStorage.removeItem('sb_avatar_' + (profile.emp_id || ''));
+      // เก็บไว้ในเครื่องด้วย เพื่อให้รูปขึ้นทันทีตอนเข้าระบบครั้งถัดไป
+      // ระหว่างที่ยังรอฐานข้อมูลตอบกลับ (เดิมบรรทัดนี้เป็น removeItem จึงเป็นเหตุให้รูปหาย)
+      try { localStorage.setItem(avatarCacheKey(profile.emp_id), nextAvatar); } catch { /* โหมดส่วนตัวเขียนไม่ได้ */ }
       showSuccess(lang === 'th' ? 'อัปเดตรูปโปรไฟล์เรียบร้อยแล้ว!' : 'Profile photo updated!');
     } catch (err) {
       showError(err);
@@ -796,9 +905,15 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
     ctx.textAlign = 'center';
     ctx.fillText(profile.full_name || 'ผู้ใช้ระบบ', 300, 545);
 
+    // ตำแหน่งกับแผนกจริงจากฐานข้อมูล ไม่ใช่คำว่า Staff เหมือนกันทุกคน
     ctx.fillStyle = goldGrad;
     ctx.font = 'bold 24px sans-serif';
-    ctx.fillText(profile.role === 'admin' ? 'ผู้จัดการ / Admin' : 'เจ้าหน้าที่ / Staff', 300, 600);
+    ctx.fillText(cardTitle.main, 300, 600);
+    if (cardTitle.sub) {
+      ctx.fillStyle = 'rgba(255,255,255,0.78)';
+      ctx.font = 'bold 19px sans-serif';
+      ctx.fillText(cardTitle.sub, 300, 630);
+    }
 
     // 6. QR Code Section (mock pixels)
     ctx.fillStyle = 'rgba(255,255,255,0.96)';
@@ -994,6 +1109,16 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
     } catch { return dateStr; }
   };
 
+  // วันที่อย่างเดียว ไม่เอาเวลา ใช้กับรายการประกาศในปฏิทิน
+  const formatThaiDate = (dateStr?: string) => {
+    const raw = String(dateStr || '').slice(0, 10);
+    if (!raw) return '-';
+    try {
+      return parseLocalDate(raw).toLocaleDateString(lang === 'th' ? 'th-TH' : 'en-GB',
+        { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+    } catch { return raw; }
+  };
+
   // ── Calendar helpers ──────────────────────────────────────────────────
   const getDaysInMonth = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
   const getFirstDayMon = (y: number, m: number) => { const d = new Date(y, m, 1).getDay(); return d === 0 ? 6 : d - 1; };
@@ -1003,8 +1128,64 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
   );
   if (dashboardData?.checked_in_today) checkinDates.add(localDateKey());
 
+  // ปฏิทินหนึ่งวันมีได้หลายรายการ เดิมเก็บเป็น 1 ต่อ 1 รายการหลังจึงทับรายการหน้าหายไป
+  const eventsByDate: Record<string, any[]> = {};
+  calendarEvents.forEach(ev => {
+    const key = String(ev?.date || '').slice(0, 10);
+    if (!key) return;
+    (eventsByDate[key] ||= []).push(ev);
+  });
   const eventMap: Record<string, any> = {};
-  calendarEvents.forEach(ev => { if (ev.date) eventMap[ev.date] = ev; });
+  Object.keys(eventsByDate).forEach(k => { eventMap[k] = eventsByDate[k][0]; });
+
+  const calEventTitle  = (ev: any) => String(ev?.label ?? ev?.title ?? ev?.topic ?? ev?.name ?? '').trim();
+  const calEventDetail = (ev: any) =>
+    String(ev?.note ?? ev?.detail ?? ev?.description ?? ev?.remark ?? ev?.body ?? '').trim();
+  const calEventHasText = (ev: any) => Boolean(calEventTitle(ev) || calEventDetail(ev));
+
+  // ประกาศจากปฏิทิน = รายการที่มีข้อความ ตั้งแต่วันนี้เป็นต้นไป เรียงจากใกล้ที่สุด
+  const todayKey = localDateKey();
+  const calendarAnnouncements = calendarEvents
+    .filter(ev => String(ev?.date || '').slice(0, 10) >= todayKey && calEventHasText(ev))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+  // ── ประกาศเด้งหน้าแรก ───────────────────────────────────────────────────
+  // เด้งวันละครั้งต่อหนึ่งประกาศ กดปิดแล้วจำไว้ พรุ่งนี้ถึงจะเด้งใหม่
+  const announceSeenKey = 'sb_announce_seen_' + (profile.emp_id || 'guest');
+  const announceIdOf = (ev: any) =>
+    String(ev?.id ?? ev?.event_id ?? `${String(ev?.date || '').slice(0, 10)}|${calEventTitle(ev)}`);
+
+  const dismissAnnounce = () => {
+    if (announcePopup) {
+      try {
+        localStorage.setItem(announceSeenKey, `${todayKey}|${announceIdOf(announcePopup)}`);
+      } catch { /* โหมดส่วนตัวเขียนไม่ได้ ก็แค่เด้งอีกรอบหน้า */ }
+    }
+    setAnnouncePopup(null);
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'home') return;
+    if (announcePopup) return;
+    if (!calendarAnnouncements.length) return;
+
+    // วันนี้ก่อน ถ้าวันนี้ไม่มีก็เอาอันที่ใกล้ที่สุดภายใน 7 วัน
+    const soonLimit = new Date();
+    soonLimit.setDate(soonLimit.getDate() + 7);
+    const limitKey = `${soonLimit.getFullYear()}-${String(soonLimit.getMonth() + 1).padStart(2, '0')}-${String(soonLimit.getDate()).padStart(2, '0')}`;
+    const target =
+      calendarAnnouncements.find(ev => String(ev.date).slice(0, 10) === todayKey) ||
+      calendarAnnouncements.find(ev => String(ev.date).slice(0, 10) <= limitKey);
+    if (!target) return;
+
+    let seen = '';
+    try { seen = localStorage.getItem(announceSeenKey) || ''; } catch { seen = ''; }
+    if (seen === `${todayKey}|${announceIdOf(target)}`) return;
+
+    const timer = window.setTimeout(() => setAnnouncePopup(target), 700);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, calendarEvents.length, profile.emp_id]);
 
   // ── Filtered lists ────────────────────────────────────────────────────
   // ฐานข้อมูลส่งชื่อคอลัมน์กลับมาได้สองแบบ (topic/detail จากหน้าแรก, title/description จากหน้ารายการ)
@@ -1038,8 +1219,30 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
     return rewardNameOf(item).toLowerCase().includes(q) || rewardDescOf(item).toLowerCase().includes(q);
   });
   const filteredRankingList = rankingList;
-  const myRankingIndex = rankingList.findIndex(item => String(item.emp_id || '') === String(profile.emp_id || ''));
+  const myRankingIndex = rankingList.findIndex((item: any) =>
+    item.is_me === true || String(item.emp_id || '') === String(profile.emp_id || ''));
   const myRankingNo = myRankingIndex >= 0 ? myRankingIndex + 1 : null;
+
+  // ── อันดับเต็ม ────────────────────────────────────────────────────────
+  // เดิมหน้านี้โชว์แค่อันดับ 1-10 พนักงานที่เหลือจึงหาตัวเองไม่เจอเลย
+  // ติดเลขอันดับจริงไว้กับทุกแถว "ก่อน" กรอง เลขจะได้ไม่เพี้ยนตอนค้นหา
+  const rankedList = rankingList.map((item: any, idx: number) => ({
+    ...item,
+    __rank: Number(item.rank_no ?? idx + 1),
+    __name: String(item.full_name || item.display_name || item.name || item.title || '-'),
+    __dept: String(item.department || item.dept_th || item.dept || item.description || ''),
+    __pos: String(item.position || item.pos_th || item.position_name || ''),
+  }));
+  const rankingDepartments = Array.from(
+    new Set(rankedList.map((x: any) => x.__dept).filter(Boolean)),
+  ).sort((a, b) => String(a).localeCompare(String(b), 'th'));
+  const rankingFullList = rankedList.filter((item: any) => {
+    if (rankingDept !== 'all' && item.__dept !== rankingDept) return false;
+    const q = rankingQuery.trim().toLowerCase();
+    if (!q) return true;
+    // ไม่เอา emp_id เข้ามาในคำค้น ไม่งั้นพิมพ์เลขไล่ทีละตัวก็เดารหัสคนอื่นได้
+    return `${item.__name} ${item.__dept} ${item.__pos}`.toLowerCase().includes(q);
+  });
   const filteredRules = rulesList
     .filter(item => (item.category || 'policy') === rulesCategory)
     .filter(item => {
@@ -1065,23 +1268,58 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
     : { background: '#fff', border: `1px solid ${thm.cardBorder}60` };
 
   // ── Avatar ─────────────────────────────────────────────────────────────
-  const displayAvatar = avatarUrl || user?.avatar_url || 'https://lh3.googleusercontent.com/d/1EQVEVtVojuH0XOfBIggn4eU5nr5GYruL';
+  // รูปที่ฐานข้อมูลเก็บไว้มาก่อนเสมอ ถ้ายังไม่มาค่อยใช้ของที่แคชไว้ในเครื่อง
+  // (เดิมเอาของในเครื่องมาก่อน ทำให้ค้างรูปเก่าและไม่รู้ว่าเซิร์ฟเวอร์อัปเดตแล้ว)
+  const rawAvatar = user?.avatar_url || user?.avatar || avatarUrl || '';
+  const displayAvatar = driveImageUrl(rawAvatar) || 'https://drive.google.com/thumbnail?id=1EQVEVtVojuH0XOfBIggn4eU5nr5GYruL&sz=w512';
   const fallbackAvatar = 'https://api.dicebear.com/7.x/adventurer/svg?seed=' + (profile.emp_id || 'avatar');
+
+  // ลองเรียงกัน 3 ชั้น: thumbnail -> lh3 -> รูปการ์ตูนแทน
+  // ทำแบบนี้เพราะ Drive คืน 429 เป็นช่วง ๆ ถ้าไม่มีชั้นสำรองรูปจะแตกเฉย ๆ
+  const handleAvatarError = (raw: string) => (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    const lh3 = driveImageFallback(raw);
+    if (lh3 && img.src !== lh3 && !img.dataset.sbTried) {
+      img.dataset.sbTried = '1';
+      img.src = lh3;
+      return;
+    }
+    img.src = fallbackAvatar;
+  };
+
   const rankingAvatar = (item: any) => {
-    if (item.emp_id === profile.emp_id) return displayAvatar;
-    return item.avatar_url || item.avatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(item.emp_id || item.full_name || 'rank')}`;
+    if (item.is_me === true || item.emp_id === profile.emp_id) return displayAvatar;
+    const raw = item.avatar_url || item.avatar || '';
+    return driveImageUrl(raw, 128) || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(item.emp_id || item.full_name || 'rank')}`;
   };
 
   // ── Nav items ─────────────────────────────────────────────────────────
   const navIcon = (src: string) => (
     <img src={src} alt="" aria-hidden="true" className="w-7 h-7 object-contain drop-shadow-sm" />
   );
-  const navItems = [
+  type NavItem = {
+    id: string; icon: React.ReactNode; label: string; color: string;
+    labelFull?: string; action?: 'community';
+  };
+  const navItems: NavItem[] = [
     { id: 'home',          icon: navIcon(NAV_LOGO_HOME),     label: t('home'), color: '#0ea5e9' },
     { id: 'news',          icon: navIcon(NAV_LOGO_NEWS),     label: t('news'), color: '#f97316' },
     { id: 'mission',       icon: navIcon(NAV_LOGO_TASK),     label: t('tasks'), color: '#8b5cf6' },
     { id: 'rewards',       icon: navIcon(NAV_LOGO_REWARDS),  label: t('shop'), color: '#f59e0b' },
     { id: 'ranking',       icon: navIcon(NAV_LOGO_RANKING),  label: t('rank'), color: '#ef4444' },
+    {
+      id: 'community',
+      icon: (
+        <span className="w-7 h-7 rounded-xl flex items-center justify-center text-white shadow-sm"
+          style={{ background: COMMUNITY_GRADIENT }}>
+          <Globe size={16} />
+        </span>
+      ),
+      label: 'Community',
+      labelFull: 'Community & Marketplace',
+      color: '#EE4D2D',
+      action: 'community',
+    },
   ];
   const pageTitle: Record<string, string> = {
     home: t('home'), news: t('news'), mission: t('tasks'), rewards: t('shop'),
@@ -1196,9 +1434,12 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                   {/* Name */}
                   <div className="absolute top-[195px] inset-x-3 text-center z-10">
                     <h3 className="text-sm font-black text-white truncate sb-nav-label">{profile.full_name}</h3>
-                    <p className="text-[9px] font-black tracking-widest mt-0.5 uppercase" style={{ color: '#fde68a' }}>
-                      {profile.role === 'admin' ? 'ผู้จัดการ / Admin' : 'เจ้าหน้าที่ / Staff'}
+                    <p className="text-[9px] font-black tracking-wide mt-0.5 truncate" style={{ color: '#fde68a' }}>
+                      {cardTitle.main}
                     </p>
+                    {cardTitle.sub && (
+                      <p className="text-[8px] font-bold mt-0.5 text-white/70 truncate">{cardTitle.sub}</p>
+                    )}
                   </div>
                   {/* QR details */}
                   <div className="absolute bottom-9 inset-x-4 flex items-center justify-between gap-2 border-t border-white/20 pt-2 z-10 text-[9px] font-bold text-white/80">
@@ -1320,6 +1561,98 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
         label={checkinLoading ? (lang === 'th' ? 'กำลังบันทึกเช็คอิน' : 'Saving check-in') : (lang === 'th' ? 'กำลังโหลดข้อมูล' : 'Loading data')}
       />
 
+      {/* ── อ่านโน้ตของวันที่กดในปฏิทิน ─────────────────────────────────── */}
+      {calDayOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4"
+          style={{ backdropFilter: 'blur(14px)', background: 'rgba(15,23,42,0.58)' }}
+          onClick={() => setCalDayOpen(null)}>
+          <div className="w-full max-w-md rounded-3xl shadow-2xl border overflow-hidden animate-scale-in"
+            style={cardStyle}
+            onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b flex items-start justify-between gap-3" style={{ borderColor: thm.border + '50' }}>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-50" style={{ color: thm.subtext }}>
+                  {t('cal_note')}
+                </p>
+                <h3 className="text-sm font-black mt-0.5 truncate" style={{ color: thm.text }}>
+                  {formatThaiDate(calDayOpen)}
+                </h3>
+              </div>
+              <button {...tintHandlers} onClick={() => setCalDayOpen(null)}
+                className={`p-2 rounded-xl border opacity-60 hover:opacity-100 shrink-0 ${TINT_CLASS}`}
+                style={{ borderColor: thm.border + '60', color: thm.subtext }}
+                aria-label={t('cal_close')}>
+                <X size={15} />
+              </button>
+            </div>
+            <div className="p-5 space-y-3 max-h-[60vh] overflow-y-auto overscroll-contain">
+              {(eventsByDate[calDayOpen] || []).length === 0 && (
+                <p className="text-xs font-bold opacity-50" style={{ color: thm.subtext }}>{t('cal_no_note')}</p>
+              )}
+              {(eventsByDate[calDayOpen] || []).map((ev: any, i: number) => {
+                const c = calendarColorFor(ev);
+                const title = calEventTitle(ev);
+                const detail = calEventDetail(ev);
+                return (
+                  <div key={i} className="rounded-2xl border p-3.5"
+                    style={{ borderColor: c + '55', background: transparentize(c, darkMode ? 0.16 : 0.07) }}>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: c }} />
+                      <span className="text-sm font-black" style={{ color: thm.text }}>
+                        {title || t('cal_event')}
+                      </span>
+                    </div>
+                    {detail
+                      ? <p className="mt-2 text-xs font-bold leading-relaxed whitespace-pre-wrap" style={{ color: thm.subtext }}>{detail}</p>
+                      : <p className="mt-2 text-[11px] font-bold opacity-45" style={{ color: thm.subtext }}>{t('cal_no_note')}</p>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── ประกาศเด้งหน้าแรก ──────────────────────────────────────────── */}
+      {announcePopup && (
+        <div className="fixed inset-0 z-[125] flex items-center justify-center p-4"
+          style={{ backdropFilter: 'blur(14px)', background: 'rgba(15,23,42,0.6)' }}
+          onClick={() => dismissAnnounce()}>
+          <div className="w-full max-w-sm rounded-3xl shadow-2xl border overflow-hidden animate-scale-in"
+            style={cardStyle}
+            onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 text-white"
+              style={{ background: `linear-gradient(135deg, ${calendarColorFor(announcePopup)}, ${thm.primary})` }}>
+              <p className="text-[10px] font-black uppercase tracking-widest opacity-85">{t('announce_title')}</p>
+              <h3 className="text-base font-black mt-1 leading-snug">
+                {calEventTitle(announcePopup) || t('cal_event')}
+              </h3>
+              <p className="text-[10px] font-bold opacity-80 mt-1">{formatThaiDate(announcePopup.date)}</p>
+            </div>
+            <div className="p-5">
+              {calEventDetail(announcePopup)
+                ? <p className="text-xs font-bold leading-relaxed whitespace-pre-wrap" style={{ color: thm.subtext }}>
+                    {calEventDetail(announcePopup)}
+                  </p>
+                : <p className="text-xs font-bold opacity-50" style={{ color: thm.subtext }}>{t('cal_no_note')}</p>}
+              <div className="flex gap-2 mt-4">
+                <button {...tintHandlers}
+                  onClick={() => { const d = String(announcePopup.date).slice(0, 10); dismissAnnounce(); setCalDayOpen(d); }}
+                  className={`flex-1 py-2.5 rounded-2xl text-xs font-black border ${TINT_CLASS}`}
+                  style={{ borderColor: thm.border + '70', color: thm.text }}>
+                  {t('cal_read_all')}
+                </button>
+                <button {...tintHandlers} onClick={() => dismissAnnounce()}
+                  className={`flex-1 py-2.5 rounded-2xl text-xs font-black text-white ${TINT_CLASS}`}
+                  style={{ background: thm.primary }}>
+                  {t('cal_close')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {toolsModalOpen && (
         <div className="fixed inset-0 z-[115] flex items-center justify-center p-4"
           style={{ backdropFilter: 'blur(14px)', background: 'rgba(15,23,42,0.58)' }}
@@ -1355,6 +1688,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                   const Icon = item.icon;
                   return (
                     <button key={idx}
+                      {...tintHandlers}
                       onClick={() => {
                         if ('action' in item && item.action === 'quotation') {
                           setToolsModalOpen(false);
@@ -1368,7 +1702,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                         }
                         showSuccess(lang === 'th' ? `เปิดเมนู ${item.title}` : `Open ${item.title}`);
                       }}
-                      className="rounded-2xl p-4 text-left border sb-hover-lift"
+                      className={`rounded-2xl p-4 text-left border sb-hover-lift ${TINT_CLASS}`}
                       style={{ background: darkMode ? 'rgba(255,255,255,0.04)' : thm.light, borderColor: thm.border + '55' }}>
                       <div className="w-10 h-10 rounded-2xl flex items-center justify-center mb-3" style={{ background: thm.primary, color: '#fff' }}>
                         <Icon size={18} />
@@ -1383,6 +1717,18 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
           </div>
         </div>
       )}
+
+      {/* Community & Marketplace menu */}
+      <SocialMenu
+        open={communityOpen}
+        onClose={() => setCommunityOpen(false)}
+        anchorRef={communityBtnRef}
+        lang={lang}
+        darkMode={darkMode}
+        accent={thm.primary}
+        border={thm.border}
+        text={textColor}
+      />
 
       {/* Hidden file input */}
       <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleAvatarUpload} />
@@ -1427,25 +1773,39 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
 
           {/* Nav */}
           <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto">
-            {navItems.map(item => (
-              <button key={item.id} onClick={() => {
-                setActiveTab(item.id as TabType);
-                if (item.id === 'tools') setToolsModalOpen(true);
-              }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl text-xs font-black transition-all text-left relative"
-                style={activeTab === item.id
+            {navItems.map(item => {
+              const isActive = item.action === 'community' ? communityOpen : activeTab === item.id;
+              return (
+              <button key={item.id}
+                {...tintHandlers}
+                ref={item.action === 'community' ? communityBtnRef : undefined}
+                aria-expanded={item.action === 'community' ? communityOpen : undefined}
+                aria-haspopup={item.action === 'community' ? 'dialog' : undefined}
+                onClick={() => {
+                  if (item.action === 'community') { setCommunityOpen(v => !v); return; }
+                  setCommunityOpen(false);
+                  setActiveTab(item.id as TabType);
+                  if (item.id === 'tools') setToolsModalOpen(true);
+                }}
+                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl text-xs font-black transition-all text-left relative ${TINT_CLASS}`}
+                style={isActive
                   ? { background: `${navGradient}, ${transparentize(item.color, 0.18)}`, color: '#f8fafc', boxShadow: `inset 3px 0 0 ${item.color}, inset 0 0 0 1px rgba(255,255,255,0.08)` }
                   : { background: 'linear-gradient(135deg, rgba(15,23,42,0.045), rgba(51,65,85,0.08))', color: darkMode ? '#cbd5e1' : '#475569' }}>
                 <span className="w-7 h-7 rounded-xl flex items-center justify-center shrink-0"
-                  style={{ background: transparentize(item.color, activeTab === item.id ? 0.18 : 0.1), color: item.color }}>
+                  style={{ background: transparentize(item.color, isActive ? 0.18 : 0.1), color: item.color }}>
                   {item.icon}
                 </span>
-                <span className="truncate sb-nav-label">{item.label}</span>
+                <span className={`truncate sb-nav-label ${item.labelFull ? 'text-[10.5px]' : ''}`}>{item.labelFull || item.label}</span>
+                {item.action === 'community' && (
+                  <ChevronRight size={12} className="ml-auto shrink-0 opacity-70 transition-transform duration-200"
+                    style={{ transform: communityOpen ? 'rotate(90deg)' : 'rotate(0deg)' }} />
+                )}
                 {item.id === 'notifications' && unreadNotiCount > 0 && (
                   <span className="ml-auto text-[9px] font-black text-white px-1.5 py-0.5 rounded-full" style={{ background: item.color }}>{unreadNotiCount}</span>
                 )}
               </button>
-            ))}
+              );
+            })}
           </nav>
 
           {/* Logout */}
@@ -1475,8 +1835,9 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
               </div>
               <button
                 type="button"
+                {...tintHandlers}
                 onClick={() => setToolsModalOpen(true)}
-                className="flex items-center justify-center w-8 h-8 rounded-2xl border transition active:scale-95"
+                className={`flex items-center justify-center w-8 h-8 rounded-2xl border transition active:scale-95 ${TINT_CLASS}`}
                 style={{ background: darkMode ? 'rgba(255,255,255,0.08)' : thm.light, borderColor: thm.border + '70', color: thm.subtext }}
                 aria-label="Services">
                 <Wrench size={15} />
@@ -1507,16 +1868,16 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
               </div>
 
               {/* TH/EN Toggle */}
-              <button onClick={() => setLang(l => l === 'th' ? 'en' : 'th')}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-black border transition-all"
+              <button {...tintHandlers} onClick={() => setLang(l => l === 'th' ? 'en' : 'th')}
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-black border transition-all ${TINT_CLASS}`}
                 style={{ background: darkMode ? 'rgba(255,255,255,0.06)' : thm.light, borderColor: thm.border + '60', color: thm.subtext }}>
                 <Globe size={11} /> {lang.toUpperCase()}
               </button>
 
               {/* Bell + Notification Panel */}
               <div className="relative" ref={notifPanelRef}>
-                <button onClick={() => { setNotifPanelOpen(p => !p); if (!notifPanelOpen) fetchNotifications(); }}
-                  className="relative p-2 rounded-xl border transition active:scale-95"
+                <button {...tintHandlers} onClick={() => { setNotifPanelOpen(p => !p); if (!notifPanelOpen) fetchNotifications(); }}
+                  className={`relative p-2 rounded-xl border transition active:scale-95 ${TINT_CLASS}`}
                   style={{ background: darkMode ? 'rgba(255,255,255,0.06)' : thm.light, borderColor: thm.border + '60' }}>
                   <Bell size={16} style={{ color: textColor }} />
                   {unreadNotiCount > 0 && (
@@ -1624,19 +1985,39 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                         style={{ perspective: '1200px' }}
                         onClick={() => setIsFlipped(f => !f)}
                       >
+                        {/*
+                          บัตรพลิกบน iPhone แล้วตัวหนังสือกลับด้าน
+
+                          สาเหตุ: React ไม่เติม vendor prefix ให้เอง หน้า Safari บน iOS
+                          จึงไม่รู้จัก backfaceVisibility ผลคือวาดทั้งสองหน้าพร้อมกัน
+                          หน้าหลังที่ถูกหมุน 180 องศาเลยทับหน้าหน้าแบบกลับด้าน
+
+                          แก้สองชั้น
+                            1) ใส่ -webkit- ให้ครบทั้ง transformStyle และ backfaceVisibility
+                            2) สลับ opacity ตอนบัตรหันข้าง (ครึ่งทางของ 750ms = 375ms)
+                               ชั้นนี้ไม่พึ่ง backface-visibility เลย จึงได้ผลกับทุกเบราว์เซอร์
+                               และตามองไม่เห็นรอยต่อ เพราะจังหวะนั้นบัตรบางจนมองไม่เห็นอยู่แล้ว
+                        */}
                         <div className="w-full h-full relative" style={{
                           transformStyle: 'preserve-3d',
+                          WebkitTransformStyle: 'preserve-3d',
                           transition: 'transform 750ms cubic-bezier(0.4, 0, 0.2, 1)',
                           transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
-                        }}>
+                          WebkitTransform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
+                        } as React.CSSProperties}>
                           {/* ── CARD FRONT ── */}
                           <div className="absolute inset-0 w-full h-full rounded-[24px] overflow-hidden flex flex-col justify-between"
                             style={{
                               backfaceVisibility: 'hidden',
+                              WebkitBackfaceVisibility: 'hidden',
+                              opacity: isFlipped ? 0 : 1,
+                              transition: 'opacity 0ms linear 375ms',
+                              pointerEvents: isFlipped ? 'none' : 'auto',
+                              zIndex: isFlipped ? 1 : 2,
                               background: cardGradient,
                               border: '1px solid rgba(253,230,138,0.5)',
                               boxShadow: '0 20px 40px rgba(0, 0, 0, 0.12), 0 5px 15px rgba(0, 0, 0, 0.06)',
-                            }}>
+                            } as React.CSSProperties}>
                             {/* Gold/white watermark SB CONNECT */}
                             <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden z-0">
                               <div
@@ -1679,9 +2060,14 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                             {/* Name & Position */}
                             <div className="absolute top-[236px] inset-x-4 text-center z-10">
                               <h3 className="text-base font-black text-white tracking-wide sb-nav-label">{profile.full_name || 'ผู้ใช้ระบบ'}</h3>
-                              <p className="text-[11px] font-black tracking-widest mt-1 uppercase" style={{ color: '#fde68a' }}>
-                                {profile.role === 'admin' ? 'ผู้จัดการ / Admin' : 'เจ้าหน้าที่ / Staff'}
+                              <p className="text-[11px] font-black tracking-wide mt-1" style={{ color: '#fde68a' }}>
+                                {cardTitle.main}
                               </p>
+                              {cardTitle.sub && (
+                                <p className="text-[9px] font-bold tracking-wide mt-0.5 text-white/75 truncate">
+                                  {cardTitle.sub}
+                                </p>
+                              )}
                             </div>
 
                             {/* Bottom Expiry & QR Section */}
@@ -1714,11 +2100,17 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                           <div className="absolute inset-0 w-full h-full rounded-[24px] overflow-hidden flex flex-col justify-between p-5"
                             style={{
                               backfaceVisibility: 'hidden',
+                              WebkitBackfaceVisibility: 'hidden',
                               transform: 'rotateY(180deg)',
+                              WebkitTransform: 'rotateY(180deg)',
+                              opacity: isFlipped ? 1 : 0,
+                              transition: 'opacity 0ms linear 375ms',
+                              pointerEvents: isFlipped ? 'auto' : 'none',
+                              zIndex: isFlipped ? 2 : 1,
                               background: '#ffffff',
                               border: '1px solid #e2e8f0',
                               boxShadow: '0 20px 40px rgba(0, 0, 0, 0.12), 0 5px 15px rgba(0, 0, 0, 0.06)',
-                            }}>
+                            } as React.CSSProperties}>
                             <div className="z-10">
                               <h4 className="text-center font-black text-slate-800 text-xs mt-3 tracking-wider">เงื่อนไขการใช้บัตร / Terms of Use</h4>
                               <div className="h-0.5 my-2.5 bg-gradient-to-r from-transparent via-[#d4af37] to-transparent opacity-60" />
@@ -1843,14 +2235,27 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                             }
                             if (isToday) bdr = thm.primary;
 
+                            // เดิมช่องวันเป็น div เฉย ๆ มีแค่ title ซึ่งบนมือถือไม่มีทางเห็น
+                            // ตอนนี้วันที่มีโน้ตกดได้จริง เปิดหน้าต่างอ่านข้อความเต็ม
+                            const dayEvents = eventsByDate[dateStr] || [];
+                            const canOpen = dayEvents.some(calEventHasText);
                             return (
-                              <div key={dayNum} title={evt?.label || ''}
-                                className="aspect-square flex items-center justify-center rounded-lg relative border cursor-default transition-all"
+                              <button
+                                key={dayNum}
+                                type="button"
+                                title={dayEvents.map(calEventTitle).filter(Boolean).join(' · ')}
+                                aria-label={canOpen
+                                  ? `${dateStr} ${dayEvents.map(calEventTitle).filter(Boolean).join(' ')}`
+                                  : String(dayNum)}
+                                disabled={!canOpen}
+                                onClick={() => { if (canOpen) setCalDayOpen(dateStr); }}
+                                className={`aspect-square flex items-center justify-center rounded-lg relative border transition-all ${canOpen ? 'cursor-pointer hover:brightness-95 active:scale-95' : 'cursor-default'}`}
                                 style={{ background: bg, color: clr, borderColor: bdr || 'transparent', opacity: isWeekend && !isCheckedIn && !evt ? 0.3 : 1, fontSize: '10px', fontWeight: 800 }}>
                                 {dayNum}
                                 {isCheckedIn && <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500 border border-white" />}
                                 {evt && <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full border border-white" style={{ background: evtColor }} />}
-                              </div>
+                                {canOpen && <div className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-3 h-[2px] rounded-full" style={{ background: evtColor, opacity: 0.85 }} />}
+                              </button>
                             );
                           })}
                         </div>
@@ -1868,6 +2273,41 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                             </div>
                           ))}
                         </div>
+
+                        {/* ── ประกาศจากปฏิทิน ─────────────────────────────── */}
+                        {/* ตัวเลขในตารางบอกได้แค่ว่า "วันนี้มีอะไร" อ่านข้อความไม่ได้ */}
+                        {/* จึงดึงรายการที่มีข้อความมาเรียงไว้ให้อ่านและกดดูเต็มได้เลย */}
+                        {calendarAnnouncements.length > 0 && (
+                          <div className="mt-3 pt-3 border-t" style={{ borderColor: thm.border + '40' }}>
+                            <p className="text-[10px] font-black uppercase tracking-widest opacity-55 mb-2" style={{ color: thm.text }}>
+                              {t('cal_announce')}
+                            </p>
+                            <div className="space-y-1.5 max-h-40 overflow-y-auto overscroll-contain pr-1">
+                              {calendarAnnouncements.slice(0, 8).map((ev: any, i: number) => {
+                                const c = calendarColorFor(ev);
+                                return (
+                                  <button
+                                    key={`${ev.date}-${i}`}
+                                    type="button"
+                                    {...tintHandlers}
+                                    onClick={() => setCalDayOpen(String(ev.date).slice(0, 10))}
+                                    className={`w-full flex items-start gap-2 text-left px-2.5 py-2 rounded-xl border ${TINT_CLASS}`}
+                                    style={{ borderColor: c + '55', background: transparentize(c, darkMode ? 0.18 : 0.08) }}>
+                                    <span className="mt-1 w-1.5 h-1.5 rounded-full shrink-0" style={{ background: c }} />
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block text-[11px] font-black truncate" style={{ color: thm.text }}>
+                                        {calEventTitle(ev) || t('cal_event')}
+                                      </span>
+                                      <span className="block text-[9px] font-bold opacity-50" style={{ color: thm.subtext }}>
+                                        {formatThaiDate(ev.date)}
+                                      </span>
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </section>
 
@@ -1992,7 +2432,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                         <h3 className="text-xs font-black uppercase tracking-widest flex items-center gap-1.5 opacity-55">
                           <Trophy size={12} /> {t('top_employees')}
                         </h3>
-                        <button onClick={() => { window.location.href = new URL('ranking_full.html', window.location.href).href; }}
+                        <button onClick={() => { setActiveTab('ranking'); setShowAllRanking(true); }}
                           className="text-[10px] font-black px-2.5 py-1 rounded-full border"
                           style={{ color: thm.subtext, borderColor: thm.border + '70', background: thm.light }}>
                           {t('ranking_full')}
@@ -2004,7 +2444,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                             style={{ background: thm.light + '60', borderColor: thm.border + '30' }}>
                             <span className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black text-white shrink-0"
                               style={{ background: idx === 0 ? '#f59e0b' : idx === 1 ? '#94a3b8' : '#b45309' }}>{idx + 1}</span>
-                            <span className="text-xs font-bold flex-1 truncate" style={{ color: textColor }}>{item.full_name || item.emp_id}</span>
+                            <span className="text-xs font-bold flex-1 truncate" style={{ color: textColor }}>{item.full_name || '-'}</span>
                             <span className="text-xs font-black shrink-0" style={{ color: thm.subtext }}>{Number(item.points || 0).toLocaleString()} {t('pts')}</span>
                           </div>
                         )) : <div className="text-center text-xs opacity-35 py-3 font-bold">{t('no_data')}</div>}
@@ -2339,7 +2779,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                       {[1, 0, 2].map((rankIdx) => {
                         const item = filteredRankingList[rankIdx];
                         if (!item) return <div key={rankIdx} />;
-                        const isMe = item.emp_id === profile.emp_id;
+                        const isMe = item.is_me ?? (item.emp_id === profile.emp_id);
                         const tone = rankIdx === 0
                           ? { label: '1', name: 'ทอง', color: '#f59e0b', h: 'h-32', icon: <Crown size={18} /> }
                           : rankIdx === 1
@@ -2363,7 +2803,7 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                                   onError={(e) => { (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(item.emp_id || 'rank')}`; }}
                                 />
                               </div>
-                              <p className="mt-2 text-[11px] font-black truncate" style={{ color: textColor }}>{item.full_name || item.emp_id}</p>
+                              <p className="mt-2 text-[11px] font-black truncate" style={{ color: textColor }}>{item.full_name || '-'}</p>
                               <p className="text-[10px] font-black" style={{ color: tone.color }}>{Number(item.points || 0).toLocaleString()} {t('pts')}</p>
                               {isMe && <span className="mt-1 inline-flex text-[8px] font-black px-1.5 py-0.5 rounded-full text-white" style={{ background: thm.primary }}>YOU</span>}
                             </div>
@@ -2381,10 +2821,10 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                 <div className="space-y-2">
                   {filteredRankingList.length > 0 ? filteredRankingList.slice(3, 10).map((item: any, offset: number) => {
                     const idx = offset + 3;
-                    const isMe = item.emp_id === profile.emp_id;
+                    const isMe = item.is_me ?? (item.emp_id === profile.emp_id);
                     const dept = item.department || item.dept || item.dept_th || '-';
-                    const displayName = item.full_name || item.name || item.emp_id || '-';
-                    const empId = item.emp_id || '-';
+                    const displayName = item.full_name || item.name || '-';
+                    const pos = item.position || item.pos_th || '';
                     return (
                       <div key={item.emp_id || idx} className="flex items-center gap-3 p-4 rounded-2xl border transition"
                         style={{
@@ -2407,7 +2847,8 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                         </div>
                         <div className="flex-1 min-w-0">
                           <span className="text-sm font-bold block truncate" style={{ color: textColor }}>{displayName}</span>
-                          <span className="text-[10px] opacity-45 font-bold truncate block">{lang === 'th' ? 'รหัส' : 'ID'} {empId} • {dept}</span>
+                          {/* รหัสพนักงานเป็นความลับ ฝั่งผู้ใช้เห็นได้แค่ตำแหน่งกับแผนก ฝั่งแอดมินยังเห็นครบ */}
+                          <span className="text-[10px] opacity-45 font-bold truncate block">{[pos, dept].filter(Boolean).join(' • ') || '-'}</span>
                         </div>
                         {isMe && <span className="text-[10px] font-black px-2 py-0.5 rounded-full text-white shrink-0" style={{ background: thm.primary }}>YOU</span>}
                         <span className="text-sm font-black shrink-0" style={{ color: thm.subtext }}>{Number(item.points || 0).toLocaleString()} {t('pts')}</span>
@@ -2415,6 +2856,119 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
                     );
                   }) : <div className="text-center py-12 opacity-35 font-bold text-sm">{t('no_data')}</div>}
                 </div>
+
+                {/* ── อันดับทั้งหมด ──────────────────────────────────── */}
+                {/* เดิมหน้านี้จบแค่อันดับ 10 พนักงานที่เหลือหาตัวเองไม่เจอ */}
+                {rankedList.length > 10 && (
+                  <div className="rounded-3xl p-4 border" style={cardStyle}>
+                    <button
+                      onClick={() => setShowAllRanking(v => !v)}
+                      className="w-full flex items-center justify-between gap-3 text-left">
+                      <span className="text-xs font-black uppercase tracking-widest opacity-55 flex items-center gap-1.5"
+                        style={{ color: thm.text }}>
+                        <Trophy size={12} /> {t('rank_all_title')}
+                      </span>
+                      <span className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-full"
+                          style={{ background: thm.light, color: thm.subtext }}>
+                          {rankedList.length} {t('rank_people')}
+                        </span>
+                        <span className="text-[10px] font-black px-2.5 py-1 rounded-full border"
+                          style={{ color: thm.subtext, borderColor: thm.border + '70' }}>
+                          {showAllRanking ? t('rank_hide') : t('ranking_full')}
+                        </span>
+                      </span>
+                    </button>
+
+                    {showAllRanking && (
+                      <div className="mt-3 space-y-3">
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <input
+                            value={rankingQuery}
+                            onChange={(e) => setRankingQuery(e.target.value)}
+                            placeholder={t('rank_search')}
+                            className="flex-1 px-3 py-2 rounded-2xl border text-xs font-bold outline-none"
+                            style={{ background: darkMode ? '#0f172a' : '#fff', borderColor: thm.border + '70', color: textColor }}
+                          />
+                          <select
+                            value={rankingDept}
+                            onChange={(e) => setRankingDept(e.target.value)}
+                            className="px-3 py-2 rounded-2xl border text-xs font-bold outline-none"
+                            style={{ background: darkMode ? '#0f172a' : '#fff', borderColor: thm.border + '70', color: textColor }}>
+                            <option value="all">{t('rank_all_dept')}</option>
+                            {rankingDepartments.map((d: any) => (
+                              <option key={String(d)} value={String(d)}>{String(d)}</option>
+                            ))}
+                          </select>
+                          {myRankingNo && (
+                            <button
+                              onClick={() => {
+                                setRankingQuery('');
+                                setRankingDept('all');
+                                setTimeout(() => {
+                                  document.getElementById('sb-rank-me')
+                                    ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                }, 60);
+                              }}
+                              className="px-3 py-2 rounded-2xl text-xs font-black text-white shrink-0"
+                              style={{ background: thm.primary }}>
+                              {t('rank_jump_me')}
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="text-[10px] font-bold opacity-45" style={{ color: thm.text }}>
+                          {rankingFullList.length} / {rankedList.length} {t('rank_people')}
+                        </div>
+
+                        <div className="space-y-1.5 max-h-[60vh] overflow-y-auto overscroll-contain pr-1">
+                          {rankingFullList.length > 0 ? rankingFullList.map((item: any) => {
+                            const isMe = item.is_me ?? (String(item.emp_id || '') === String(profile.emp_id || ''));
+                            const medal = item.__rank === 1 ? '#f59e0b'
+                              : item.__rank === 2 ? '#94a3b8'
+                              : item.__rank === 3 ? '#b45309' : null;
+                            return (
+                              <div
+                                key={item.__rank}
+                                id={isMe ? 'sb-rank-me' : undefined}
+                                className="flex items-center gap-2.5 px-3 py-2 rounded-2xl border"
+                                style={{
+                                  background: isMe ? thm.light : (darkMode ? '#1e293b' : '#fff'),
+                                  borderColor: isMe ? thm.primary + '70' : thm.border + '35',
+                                  boxShadow: isMe ? `0 0 0 2px ${thm.primary}25` : 'none',
+                                }}>
+                                <span
+                                  className="w-8 shrink-0 text-center text-[11px] font-black rounded-full py-0.5"
+                                  style={medal
+                                    ? { background: medal, color: '#fff' }
+                                    : { color: thm.subtext, background: darkMode ? '#0f172a' : '#f1f5f9' }}>
+                                  {item.__rank}
+                                </span>
+                                <div className="flex-1 min-w-0">
+                                  <span className="text-xs font-bold block truncate" style={{ color: textColor }}>
+                                    {item.__name}
+                                  </span>
+                                  <span className="text-[9px] opacity-45 font-bold truncate block">
+                                    {[item.__pos, item.__dept].filter(Boolean).join(' • ') || '-'}
+                                  </span>
+                                </div>
+                                {isMe && (
+                                  <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full text-white shrink-0"
+                                    style={{ background: thm.primary }}>YOU</span>
+                                )}
+                                <span className="text-xs font-black shrink-0" style={{ color: thm.subtext }}>
+                                  {Number(item.points || 0).toLocaleString()}
+                                </span>
+                              </div>
+                            );
+                          }) : (
+                            <div className="text-center py-8 opacity-35 font-bold text-xs">{t('rank_none')}</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -2833,31 +3387,36 @@ export default function UserDashboard({ user: initialUser, onLogout }: UserDashb
           </main>
 
           {/* ── FIXED BOTTOM NAV (mobile < lg) ───────────────────────── */}
-          <nav className="fixed bottom-0 inset-x-0 h-16 flex items-center justify-around gap-1 px-2 z-40 lg:hidden border-t"
+          <nav className="fixed bottom-0 inset-x-0 h-16 flex items-center justify-around gap-0.5 px-1 z-40 lg:hidden border-t"
             style={{ ...headerStyle }}>
-            {navItems.map(item => (
-              <button key={item.id} onClick={() => {
+            {navItems.map(item => {
+              const isActive = item.action === 'community' ? communityOpen : activeTab === item.id;
+              return (
+              <button key={item.id} {...tintHandlers} onClick={() => {
+                if (item.action === 'community') { setCommunityOpen(v => !v); return; }
+                setCommunityOpen(false);
                 setActiveTab(item.id as TabType);
                 if (item.id === 'tools') setToolsModalOpen(true);
               }}
-                className="min-w-[58px] flex flex-col items-center gap-0.5 transition-all relative px-1 py-1 rounded-2xl"
+                className={`flex-1 basis-0 min-w-0 max-w-[76px] flex flex-col items-center gap-0.5 transition-all relative px-0.5 py-1 rounded-2xl ${TINT_CLASS}`}
                 style={{
-                  background: activeTab === item.id ? `${navGradient}, ${transparentize(item.color, 0.18)}` : 'transparent',
-                  color: activeTab === item.id ? '#f8fafc' : (darkMode ? '#cbd5e1' : '#94a3b8'),
+                  background: isActive ? `${navGradient}, ${transparentize(item.color, 0.18)}` : 'transparent',
+                  color: isActive ? '#f8fafc' : (darkMode ? '#cbd5e1' : '#94a3b8'),
                 }}>
-                <span className="w-8 h-8 rounded-2xl flex items-center justify-center"
-                  style={{ background: transparentize(item.color, activeTab === item.id ? 0.18 : 0.08), color: item.color }}>
+                <span className="w-8 h-8 rounded-2xl flex items-center justify-center shrink-0"
+                  style={{ background: transparentize(item.color, isActive ? 0.18 : 0.08), color: item.color }}>
                   {item.icon}
                 </span>
-                <span className="text-[8px] font-black tracking-wider sb-nav-label">{item.label}</span>
+                <span className="w-full text-center text-[8px] font-black tracking-wider truncate sb-nav-label">{item.label}</span>
                 {item.id === 'notifications' && unreadNotiCount > 0 && (
                   <div className="absolute -top-0.5 right-0 w-2 h-2 rounded-full border border-white" style={{ background: item.color }} />
                 )}
-                {activeTab === item.id && (
+                {isActive && (
                   <div className="absolute -bottom-1 w-4 h-0.5 rounded-full" style={{ background: item.color }} />
                 )}
               </button>
-            ))}
+              );
+            })}
           </nav>
 
         </div>

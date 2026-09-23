@@ -24,11 +24,11 @@ if /i not "%BRANCH%"=="main" (
   echo.
 )
 
-echo [1/5] git status
+echo [1/7] git status
 git status --short
 echo.
 
-echo [2/5] Checking that .env is ignored ...
+echo [2/7] Checking that .env is ignored ...
 git check-ignore -v .env
 if errorlevel 1 (
   echo.
@@ -39,7 +39,7 @@ if errorlevel 1 (
 echo    OK    .env is ignored
 echo.
 
-echo [3/5] npm run check ...
+echo [3/7] npm run check ...
 call npm run check
 if errorlevel 1 (
   echo.
@@ -49,7 +49,7 @@ if errorlevel 1 (
 echo    OK    all checks passed
 echo.
 
-echo [4/5] Staging and committing ...
+echo [4/7] Staging and committing ...
 git add -A
 git status --short
 echo.
@@ -62,9 +62,39 @@ if errorlevel 1 (
 )
 echo.
 
-echo [5/5] Pushing ...
+echo [5/7] Pushing ...
 git push -u origin %BRANCH%
 if errorlevel 1 goto :fail
+
+echo.
+echo [6/7] Backing up to Google Drive ...
+if exist "%~dp0BACKUP_TO_GDRIVE.bat" (
+  call "%~dp0BACKUP_TO_GDRIVE.bat" /yes < nul
+  if errorlevel 1 (
+    echo    WARN  Drive backup did not finish. The push itself is fine.
+    echo          Run BACKUP_TO_GDRIVE.bat by hand to see why.
+  ) else (
+    echo    OK    code copied to Google Drive ^(sql and apps_script stay here^)
+  )
+) else (
+  echo    SKIP  BACKUP_TO_GDRIVE.bat not found
+)
+echo.
+
+echo [7/7] Backing up to the company server ...
+if exist "%~dp0BACKUP_TO_SERVER.bat" (
+  call "%~dp0BACKUP_TO_SERVER.bat" /yes < nul
+  if errorlevel 1 (
+    echo    WARN  server backup did not finish. The push itself is fine.
+    echo          Usually this means you are off the office network.
+    echo          Run BACKUP_TO_SERVER.bat by hand when you are back on it.
+  ) else (
+    echo    OK    complete copy on the server, sql and apps_script included
+  )
+) else (
+  echo    SKIP  BACKUP_TO_SERVER.bat not found
+)
+echo.
 
 echo.
 echo ============================================================

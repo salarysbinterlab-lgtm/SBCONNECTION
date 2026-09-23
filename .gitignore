@@ -36,3 +36,11 @@ public/app/
 # เอกสารที่ export มาพร้อมค่าจริง
 docs/*.docx
 docs/*.pdf
+
+# path ของโฟลเดอร์ Google Drive และ server กลาง ที่ใช้สำรอง เป็นค่าเฉพาะเครื่อง
+backup_target.txt
+server_target.txt
+
+# zip สำรองของ sql/ apps_script/ .env ที่ BACKUP_TO_GDRIVE.bat เขียนไว้
+# ตั้งใจให้อยู่ในเครื่องอย่างเดียว ไม่ขึ้น GitHub และไม่ขึ้น Google Drive
+_local_snapshots/

@@ -12,6 +12,13 @@
 // Optional legacy properties:
 //   FOLDER_MISSION_EVIDENCE_ID, FOLDER_ATTACHMENTS_ID
 //
+// Required Script Properties (game system):
+//   FOLDER_GAMES_ID          โฟลเดอร์แม่ของรูปทุกเกม
+//   FOLDER_GAME_WHEEL_ID     รูปของกงล้อรางวัล
+//   เกมใหม่ให้ตั้งชื่อ property ตามแบบ FOLDER_GAME_<SLUG>_ID
+//   แล้ว bucket ที่ส่งมาจากแอปคือ "game_<slug>" (ตัวเล็ก) โดยอัตโนมัติ
+//   ตัวติดตั้งอยู่ในไฟล์ SBConnect_Setup_Folders.gs → รัน SB_SETUP_ALL()
+//
 // Required Script Properties (Quotation):
 //   FOLDER_QUOTATION_ID
 //   FOLDER_QUOTATION_PDF_ID
@@ -156,6 +163,35 @@ function quotationImageFolderId_() {
   return propId("FOLDER_QUOTATION_IMAGE_ID", DEFAULT_QUOTATION_IMAGE_FOLDER_ID);
 }
 
+/**
+ * โฟลเดอร์ของระบบเกม — อ่านจาก Script Properties แบบไดนามิก
+ *
+ * ทุก property ที่ชื่อตามแบบ FOLDER_GAME_<SLUG>_ID จะกลายเป็น bucket "game_<slug>"
+ * เอง จึงเพิ่มเกมใหม่ได้โดยไม่ต้องแก้โค้ดไฟล์นี้อีก (รัน SB_ADD_GAME() ในไฟล์ติดตั้ง)
+ *
+ * ตัวอย่าง: FOLDER_GAME_WHEEL_ID  →  bucket "game_wheel"
+ */
+function gameFolders_() {
+  var out = {};
+  var gamesRootId = propId("FOLDER_GAMES_ID");
+  if (gamesRootId) {
+    out.games = gamesRootId;
+    out.game = gamesRootId;
+  }
+
+  var all = scriptProps().getProperties();
+  var keys = Object.keys(all);
+  for (var i = 0; i < keys.length; i += 1) {
+    var match = keys[i].match(/^FOLDER_GAME_([A-Z0-9_]+)_ID$/);
+    if (!match) continue;
+    var folderId = driveIdOnly_(all[keys[i]]);
+    if (!folderId) continue;
+    // ถ้าเกมนั้นยังไม่ได้ตั้งโฟลเดอร์ของตัวเอง ให้ตกไปใช้โฟลเดอร์แม่ของเกม
+    out["game_" + match[1].toLowerCase()] = folderId;
+  }
+  return out;
+}
+
 function driveFolders() {
   var profileId = propId("FOLDER_PROFILE_ID");
   var newsId = propId("FOLDER_NEWS_ID");
@@ -164,7 +200,7 @@ function driveFolders() {
   var quotationId = quotationFolderId_();
   var quotationPdfId = quotationPdfFolderId_();
   var quotationImageId = quotationImageFolderId_();
-  return {
+  var folders = {
     avatars: profileId,
     profile: profileId,
     news: newsId,
@@ -179,6 +215,20 @@ function driveFolders() {
     mission_evidence: propId("FOLDER_MISSION_EVIDENCE_ID", missionsId),
     attachments: propId("FOLDER_ATTACHMENTS_ID", missionsId || newsId || rewardId || profileId)
   };
+
+  var games = gameFolders_();
+  var gameKeys = Object.keys(games);
+  for (var i = 0; i < gameKeys.length; i += 1) {
+    folders[gameKeys[i]] = games[gameKeys[i]];
+  }
+  // เกมที่ยังไม่มีโฟลเดอร์ของตัวเอง ให้ลงที่โฟลเดอร์แม่ของเกมไปก่อน ไม่ให้อัปโหลดพัง
+  return folders;
+}
+
+/** bucket นี้เป็นรูปของระบบเกมหรือไม่ */
+function isGameBucket_(bucket) {
+  var key = String(bucket || "").toLowerCase();
+  return key === "games" || key === "game" || key.indexOf("game_") === 0;
 }
 
 function doPost(e) {
@@ -255,6 +305,13 @@ function doPost(e) {
 
 function handleDriveUpload_(body, legacyType, resolvedBucket, quotationUpload) {
   var folders = driveFolders();
+
+  // เกมใหม่ที่ยังไม่ได้สร้างโฟลเดอร์ของตัวเอง: ให้ลงโฟลเดอร์แม่ของเกมไปก่อน
+  // จะได้ไม่ต้องรอ setup ก่อนถึงจะอัปโหลดได้ แต่ยังแยกออกจากรูปส่วนอื่นของแอป
+  if (resolvedBucket && !folders[resolvedBucket] && isGameBucket_(resolvedBucket) && folders.games) {
+    folders[resolvedBucket] = folders.games;
+  }
+
   if (!resolvedBucket || !folders[resolvedBucket]) {
     if (quotationUpload) throw new Error("Invalid quotation bucket or missing quotation folder Script Property");
     return jsonOutput({ status: "error", ok: false, message: "Invalid bucket or missing folder Script Property" });
@@ -433,7 +490,9 @@ function isQuotationBucket_(bucket) {
 function isAppUploadRequest_(requestType, bucket) {
   var type = String(requestType || "").toLowerCase();
   var key = String(bucket || "").toLowerCase();
-  return type === "upload" && ["avatars", "profile", "news", "missions", "rewards", "reward", "mission_evidence", "attachments"].indexOf(key) >= 0;
+  if (type !== "upload") return false;
+  if (isGameBucket_(key)) return true;
+  return ["avatars", "profile", "news", "missions", "rewards", "reward", "mission_evidence", "attachments"].indexOf(key) >= 0;
 }
 
 function validateAppUploadAuthorization_(session, bucket, meta) {
@@ -444,6 +503,10 @@ function validateAppUploadAuthorization_(session, bucket, meta) {
   var isAdmin = ["admin", "admin_it", "dev"].indexOf(role) >= 0;
 
   if (!empId) throw new Error("SESSION_INVALID");
+  // รูปของระบบเกม (หน้าช่องกงล้อ ไอคอนรางวัล ฯลฯ) เป็นของที่ตั้งค่าจากฝั่งแอดมินเท่านั้น
+  if (isGameBucket_(key) && !isAdmin) {
+    throw new Error("ADMIN_ONLY");
+  }
   if (["news", "missions", "rewards", "reward"].indexOf(key) >= 0 && !isAdmin) {
     throw new Error("ADMIN_ONLY");
   }
@@ -460,6 +523,7 @@ function isAllowedAppUploadMime_(bucket, mimeType) {
   if (["attachments", "mission_evidence"].indexOf(key) >= 0) {
     return images.concat(["application/pdf"]).indexOf(mime) >= 0;
   }
+  // รูปเกมรับเฉพาะภาพ (รวม gif เพราะช่องกงล้อใช้ภาพเคลื่อนไหวได้)
   return images.indexOf(mime) >= 0;
 }
 
@@ -2696,6 +2760,8 @@ function scrubObject(obj) {
 }
 
 function legacyTypeToBucket(type) {
+  // รูปของระบบเกม: ส่ง type มาเป็น "game_wheel" ตรงๆ ก็ได้ ไม่ต้องส่ง bucket ซ้ำ
+  if (isGameBucket_(type)) return String(type || "").toLowerCase();
   if (type === "profile") return "avatars";
   if (type === "reward") return "rewards";
   if (type === "news") return "news";
@@ -2734,11 +2800,16 @@ function jsonOutput(obj) {
 
 function doGet() {
   var folders = driveFolders();
+  var gameBuckets = Object.keys(folders).filter(function(key) {
+    return isGameBucket_(key) && !!folders[key];
+  });
   return jsonOutput({
     status: "success",
     service: "SB Connect Drive Upload + Sheet Audit + Quotation API",
     sheetId: auditSheetId(),
     buckets: Object.keys(folders).filter(function(key) { return !!folders[key]; }),
+    gameBuckets: gameBuckets,
+    gameFolderConfigured: !!folders.games,
     logTypes: ["log", "log_batch"],
     quotationFolderConfigured: !!folders.quotation,
     quotationPdfFolderConfigured: !!folders.quotation_pdf,
